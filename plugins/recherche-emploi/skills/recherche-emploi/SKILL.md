@@ -37,7 +37,7 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
 - `jobsearch.js` : script unique (base SQLite, commandes, serveur du dashboard). Copié depuis `scripts/` livré avec ce skill. Aucune dépendance npm, il utilise `node:sqlite` intégré à Node.
 - `vendor/` : PDF.js, copié en même temps que le script. Sert à afficher les CV dans le dashboard sans passer par le lecteur PDF du navigateur.
-- `cv/` : l'utilisateur y dépose un ou plusieurs CV en PDF. Chacun est analysé et consultable séparément dans le dashboard.
+- `cv/` : créé automatiquement par le script. L'utilisateur y dépose un ou plusieurs CV en PDF. Chacun est analysé et consultable séparément dans le dashboard.
 - `data/jobsearch.db` : la base, créée et migrée automatiquement. Les sauvegardes d'avant migration y sont déposées sous `jobsearch.backup-v*.db`.
 - `tmp/` : fichiers JSON temporaires passés au script.
 
@@ -102,7 +102,7 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
 Le tableau `cvs` renvoyé par `check` liste un élément par PDF présent dans `cv/`, avec `id`, `filename`, `in_db`, `needs_import`, `is_active`.
 
-**Aucun PDF.** Ne t'arrête pas sèchement. Donne le chemin exact renvoyé dans `cv_dir`, puis `AskUserQuestion` :
+**Aucun PDF.** Le dossier existe déjà, `check` l'a créé : ne demande jamais à l'utilisateur de le créer, demande-lui d'y déposer un fichier. Donne le chemin exact renvoyé dans `cv_dir`, puis pose la question :
 
 > « Dépose ton CV en PDF dans `<cv_dir>`. Dis-moi quand c'est fait. »
 > Options : **C'est fait** · **Ouvrir le dossier** · **Plus tard**

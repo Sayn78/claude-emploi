@@ -111,13 +111,18 @@ Sous Windows, `%USERPROFILE%\.claude\skills\` remplace `~/.claude/skills/`.
 
 ## Premier lancement
 
-1. Créez un dossier de travail, par exemple `job-search` dans votre dossier personnel.
-2. Créez un sous-dossier `cv/` et déposez-y votre CV en PDF. Vous pouvez en mettre plusieurs.
-3. Ouvrez Claude Code dans le dossier de travail et écrivez : **lance ma recherche d'emploi**.
+1. Créez un dossier de travail vide, par exemple `job-search` dans votre dossier personnel.
+2. Ouvrez Claude Code dans ce dossier et tapez :
 
-Claude enchaîne alors tout seul : il vérifie les pré-requis, installe son script dans le dossier, crée la base, ouvre le dashboard sur http://localhost:3000 et vous pose ses questions. Les questions s'affichent dans le chat de la page, avec les réponses en boutons : vous cliquez, pas besoin de taper.
+```text
+/recherche-emploi
+```
 
-Ce qu'il vous demandera : quel CV utiliser, quel poste et quelle ville chercher, combien d'offres vous voulez garder, combien d'annonces il a le droit de lire au maximum, et sur quel site chercher.
+C'est tout. Vous n'avez rien à préparer : Claude crée le sous-dossier `cv/`, installe son script, crée la base et ouvre le dashboard sur <http://localhost:3000>. Il vous demande alors de déposer votre CV en PDF dans `cv/`, avec un bouton qui ouvre le dossier pour vous, et il attend que vous confirmiez.
+
+Ses questions s'affichent ensuite dans le chat de la page, avec les réponses en boutons : quel CV utiliser, quel poste et quelle ville chercher, combien d'offres vous voulez garder, combien d'annonces il a le droit de lire au maximum, sur quel site chercher. Vous cliquez, vous ne tapez rien.
+
+Deux variantes selon votre installation. Si vous avez installé par plugin, la commande devient `/recherche-emploi:recherche-emploi`. Et si vous préférez, une phrase suffit aussi : **lance ma recherche d'emploi**, ou **analyse mon CV** pour l'audit ATS.
 
 ---
 
