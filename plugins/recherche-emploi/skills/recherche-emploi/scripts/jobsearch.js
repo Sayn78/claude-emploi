@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.10.0';
+const VERSION = '2.11.0';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -13,6 +13,7 @@ const ROOT = __dirname;
 const CV_DIR = path.join(ROOT, 'cv');
 const DATA_DIR = path.join(ROOT, 'data');
 const VENDOR_DIR = path.join(ROOT, 'vendor');
+const LOGO_DIR = path.join(ROOT, 'logo');
 const DB_PATH = path.join(DATA_DIR, 'jobsearch.db');
 
 const SCHEMA_VERSION = 9;
@@ -21,14 +22,35 @@ const KANBAN = ['a_postuler', 'postulee', 'entretien', 'refus', 'accepte'];
 const APPLIED = ['postulee', 'entretien', 'refus', 'accepte'];
 const STATUSES = KANBAN.concat(['ecartee']);
 const STATUS_ALIAS = { nouvelle: 'a_postuler' };
-const SITES = ['hellowork', 'indeed', 'les_deux'];
+// Sites interrogeables. Une recherche en vise un ou plusieurs : searches.site
+// porte la liste separee par des virgules, offers.site porte toujours une seule
+// cle, la provenance reelle de l'offre.
+const SITES = ['hellowork', 'indeed', 'france_travail', 'free_work', 'linkedin'];
+// 'les_deux' etait la troisieme valeur de l'enumeration avant le multi-sites.
+// Les anciennes lignes en base le portent encore : on le traduit a la lecture.
+const SITE_ALIAS = { les_deux: 'hellowork,indeed' };
 // Types de contrat proposes a la recherche. 'tous' = pas de filtre, et c'est
 // le defaut : mieux vaut ne rien filtrer que filtrer a l'envers.
-const CONTRATS = ['tous', 'cdi', 'cdd', 'alternance', 'stage', 'interim', 'temps_partiel'];
+const CONTRATS = ['tous', 'cdi', 'cdd', 'alternance', 'stage', 'interim', 'temps_partiel', 'freelance'];
 // Actions declenchables par un bouton du dashboard. Le watcher les emet sur
 // stdout, l'outil Monitor de Claude Code transforme chaque ligne en notification.
 const ACTIONS = ['check-deps', 'scan-cv', 'analyze-cv', 'audit-cv', 'new-search', 'letter', 'letters-missing', 'message', 'answer'];
 const VENDOR_FILES = { 'pdf.min.mjs': 'text/javascript', 'pdf.worker.min.mjs': 'text/javascript' };
+// Logo de chaque site, servi depuis logo/. Liste blanche : le nom de fichier ne
+// vient jamais de la requete. Un fichier absent n'est pas une erreur, le
+// dashboard retombe sur le nom du site ecrit en toutes lettres.
+// `sombre` est la variante pour fond sombre : HelloWork et Indeed sont des
+// marques monochromes quasi noires, France Travail et Free-Work ont un texte
+// bleu marine. Sans variante, elles disparaissent dans le fond. LinkedIn n'en a
+// pas besoin, son bleu et son blanc passent partout.
+const SITE_LOGOS = {
+  france_travail: { clair: 'France-travail-2023.svg', sombre: 'France-travail-2023-sombre.svg' },
+  hellowork: { clair: 'Logo_Hellowork.svg', sombre: 'Logo_Hellowork-sombre.svg' },
+  free_work: { clair: 'Free-work_logo.png', sombre: 'Free-work_logo-sombre.png' },
+  indeed: { clair: 'Indeed_logo.svg', sombre: 'Indeed_logo-sombre.svg' },
+  linkedin: { clair: 'LinkedIn_icon.svg' },
+};
+const LOGO_FICHIERS = Object.values(SITE_LOGOS).flatMap((v) => Object.values(v));
 const WATCHER_TTL_MS = 15000;   // au-dela, le dashboard considere que Claude n'ecoute plus
 // Dependances que seul Claude peut verifier : elles restent grises tant qu'il
 // n'a pas repondu via set-dep. Les autres sont calculees par le serveur.
@@ -36,6 +58,9 @@ const CLAUDE_DEPS = {
   playwright: 'Playwright MCP (navigateur)',
   hellowork: 'HelloWork accessible',
   indeed: 'Indeed accessible',
+  france_travail: 'France Travail accessible',
+  free_work: 'Free-Work accessible',
+  linkedin: 'LinkedIn accessible (visiteur)',
 };
 // Skills dont depend le parcours. Le serveur les voit sur le disque, donc ces
 // cases sont vertes ou rouges tout de suite, sans attendre une reponse de Claude.
@@ -43,7 +68,13 @@ const SKILL_DEPS = {
   humanizer: { label: 'Skill humanizer (lettres)', dirs: ['humanizer', 'avoid-ai-writing'] },
   audit_ats: { label: 'Skill audit-cv-ats (audit)', dirs: ['audit-cv-ats'] },
 };
-const SITE_HOSTS = { hellowork: 'hellowork', indeed: 'indeed' };
+const SITE_HOSTS = {
+  hellowork: 'hellowork', indeed: 'indeed', france_travail: 'francetravail',
+  free_work: 'free-work', linkedin: 'linkedin',
+};
+// Nombre de sites a avoir deja visites pour considerer le profil navigateur
+// comme prepare. Un seuil, pas la totalite : personne n'utilise les cinq sites.
+const PROFIL_WARM_MIN = 2;
 
 // --- sortie / erreurs -------------------------------------------------------
 const now = () => new Date().toISOString();
@@ -311,7 +342,32 @@ function normalizeUrl(u) {
   try { p = new URL(u); } catch { fail('URL invalide : ' + u); }
   if (!/^https?:$/.test(p.protocol)) fail('URL non http(s) : ' + u);
   if (p.hostname.includes('indeed.') && p.searchParams.get('jk')) return p.origin + '/viewjob?jk=' + p.searchParams.get('jk');
+  // LinkedIn : la meme annonce s'atteint par /jobs/view/<id>, par le lien de la
+  // liste en mode visiteur qui prefixe l'id d'un slug (/jobs/view/admin-h-f-at-
+  // acme-4428859421), ou par /jobs/search?currentJobId=<id> quand la fiche
+  // s'ouvre dans le panneau de droite. Sans ca, has-url ne reconnait pas une
+  // offre deja lue et le plafond part en doublons. L'hote varie aussi (fr., www.).
+  if (p.hostname.includes('linkedin.')) {
+    const id = (p.pathname.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/) || [])[1]
+      || ((p.searchParams.get('currentJobId') || '').match(/^\d+$/) || [])[0];
+    if (id) return 'https://www.linkedin.com/jobs/view/' + id;
+  }
   return p.origin + p.pathname.replace(/\/$/, '');
+}
+// Normalise le champ site d'une recherche : accepte une cle, une liste separee
+// par des virgules, ou l'ancien alias les_deux. Renvoie la forme canonique.
+function normalizeSites(v) {
+  const raw = String(v == null ? '' : v).trim().toLowerCase();
+  if (!raw) fail('site est requis : ' + SITES.join(' | ') + ' (plusieurs cles separees par des virgules)');
+  const keys = [];
+  for (const part of (SITE_ALIAS[raw] || raw).split(',')) {
+    const k = part.trim();
+    if (!k) continue;
+    if (!SITES.includes(k)) fail('site inconnu : ' + k + ' - valeurs admises : ' + SITES.join(' | '));
+    if (!keys.includes(k)) keys.push(k);
+  }
+  if (!keys.length) fail('site est requis : ' + SITES.join(' | '));
+  return keys.join(',');
 }
 const listText = (v) => Array.isArray(v) ? v.join('\n') : (v == null ? null : String(v));
 const cvFiles = () => fs.existsSync(CV_DIR) ? fs.readdirSync(CV_DIR).filter((f) => /\.pdf$/i.test(f)).sort() : [];
@@ -520,6 +576,19 @@ function sessionChat(db) {
   return id;
 }
 
+// URL du logo de chaque site dont le fichier est vraiment sur le disque, par
+// theme. `sombre` retombe sur `clair` quand il n'y a pas de variante.
+function logosPresents() {
+  const m = {};
+  for (const [site, v] of Object.entries(SITE_LOGOS)) {
+    const url = (f) => (f && fs.existsSync(path.join(LOGO_DIR, f))) ? '/logo/' + f : null;
+    const clair = url(v.clair);
+    if (!clair) continue;
+    m[site] = { clair, sombre: url(v.sombre) || clair };
+  }
+  return m;
+}
+
 function depsState(db) {
   const m = process.version.slice(1).split('.').map(Number);
   const nodeOk = m[0] > 22 || (m[0] === 22 && m[1] >= 13);
@@ -549,10 +618,10 @@ function depsState(db) {
   } else if (pr.locked && !pr.stale) {
     pDetail = 'profil verrouille (navigateur ouvert) et jamais lu jusqu ici';
   } else if (pr.locked) {
-    pStatus = warm === Object.keys(SITE_HOSTS).length ? 'ok' : 'unknown';
+    pStatus = warm >= PROFIL_WARM_MIN ? 'ok' : 'unknown';
     pDetail = counts + ' - releve du ' + String(pr.at).slice(0, 16).replace('T', ' ') + ', profil verrouille depuis';
   } else {
-    pStatus = warm === Object.keys(SITE_HOSTS).length ? 'ok' : 'unknown';
+    pStatus = warm >= PROFIL_WARM_MIN ? 'ok' : 'unknown';
     pDetail = counts;
   }
   d.profil = { label: 'Profil navigateur prepare', status: pStatus, detail: pDetail };
@@ -689,7 +758,7 @@ const commands = {
   'start-search'(args) {
     const d = input(args);
     if (!d.title || !d.location || !d.site) fail('Champs requis : title, location, site');
-    if (!SITES.includes(d.site)) fail('site doit valoir : ' + SITES.join(' | '));
+    const sites = normalizeSites(d.site);
     const db = openDb();
     const target = d.target_count ? Number(d.target_count) : null;
     const maxSeen = d.max_seen ? Number(d.max_seen) : (target ? target * 4 : 40);
@@ -699,8 +768,9 @@ const commands = {
     if (!CONTRATS.includes(contrat)) fail('contract_wanted doit valoir : ' + CONTRATS.join(' | '));
     const cv = findCv(db, d.cv_id);
     const r = db.prepare('INSERT INTO searches (title, location, site, target_count, max_seen, cv_id, started_at, contract_wanted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(d.title, d.location, d.site, target, maxSeen, cv ? cv.id : null, now(), contrat);
+      .run(d.title, d.location, sites, target, maxSeen, cv ? cv.id : null, now(), contrat);
     out({ ok: true, search_id: Number(r.lastInsertRowid), target_count: target, max_seen: maxSeen,
+      site: sites, sites: sites.split(','),
       contract_wanted: contrat, cv_id: cv ? cv.id : null, cv_filename: cv ? cv.filename : null });
   },
 
@@ -1091,6 +1161,19 @@ function serve(port) {
         res.writeHead(200, { 'Content-Type': VENDOR_FILES[name], 'Cache-Control': 'public, max-age=31536000, immutable' });
         return fs.createReadStream(full).pipe(res);
       }
+      if (req.method === 'GET' && url.pathname.startsWith('/logo/')) {
+        // Meme liste blanche stricte que /vendor/ : on ne sert que les noms
+        // declares dans SITE_LOGOS, jamais un segment issu de l'URL.
+        const name = url.pathname.slice('/logo/'.length);
+        if (!LOGO_FICHIERS.includes(name)) return json(res, 404, { error: 'not found' });
+        const full = path.join(LOGO_DIR, name);
+        if (!fs.existsSync(full)) return json(res, 404, { error: 'fichier absent : logo/' + name });
+        const types = { svg: 'image/svg+xml', png: 'image/png', webp: 'image/webp', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+        const type = types[name.split('.').pop().toLowerCase()];
+        if (!type) return json(res, 415, { error: 'format non servi : ' + name });
+        res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400' });
+        return fs.createReadStream(full).pipe(res);
+      }
       if (req.method === 'GET' && url.pathname === '/api/state') {
         const files = cvFiles();
         const rows = db.prepare(`SELECT c.id, c.filename, c.is_active, c.imported_at, c.updated_at, c.file_mtime, c.profile_json,
@@ -1128,6 +1211,7 @@ function serve(port) {
           version: VERSION,
           watcher_alive: watcherAlive(db),
           pdfjs: fs.existsSync(path.join(VENDOR_DIR, 'pdf.min.mjs')),
+          logos: logosPresents(),
           deps: depsState(db),
           actions: db.prepare('SELECT id, type, label, status, created_at, done_at, result FROM actions ORDER BY id DESC LIMIT 20').all(),
           watcher_pid: getSetting(db, 'watcher_pid'),
@@ -1313,7 +1397,7 @@ const PAGE = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta n
   --sh2:0 4px 16px rgba(0,0,0,.45);
   --sh3:0 20px 52px rgba(0,0,0,.6);
   --tint:color-mix(in oklab,var(--acc) 15%,var(--card));
- }
+  }
 }
 *{box-sizing:border-box}html{height:100%}
 body{margin:0;display:flex;flex-direction:column;height:100dvh;overflow:hidden;
@@ -1386,6 +1470,52 @@ body.modal-open #modal{display:flex;animation:fade .18s ease}
 @keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 #modalbox label{display:block;margin:12px 0 0;font-size:13px;color:var(--mut)}
 #modalbox input,#modalbox select{width:100%;margin-top:4px}
+/* Les sites se choisissent par pastilles a bascule, pas par cases a cocher :
+   une pastille eteinte reste neutre, une pastille choisie prend la couleur
+   d'accent. Les boutons echappent au width:100% des champs ci-dessus. */
+#modalbox .aide{font-size:12px;color:var(--mut);margin-top:5px;line-height:1.45;opacity:.85}
+#modalbox .sites{margin-top:6px;display:flex;flex-wrap:wrap;gap:8px}
+/* flex:none est indispensable : sans lui la pastille retrecit sous la largeur de
+   son contenu, et le nowrap ci-dessous fait deborder le texte au lieu de passer
+   a la ligne suivante. */
+#modalbox .sites button{width:auto;margin:0;flex:none;display:inline-flex;align-items:center;gap:8px;
+ padding:7px 13px;font-size:14px;line-height:1.2;white-space:nowrap;cursor:pointer;
+ border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--mut);
+ transition:border-color var(--t),background var(--t),color var(--t),box-shadow var(--t)}
+#modalbox .sites button:hover{border-color:var(--acc);color:var(--fg)}
+#modalbox .sites button:focus-visible{outline:0;box-shadow:0 0 0 3px var(--ring)}
+#modalbox .sites button[aria-pressed=true]{border-color:var(--acc);color:var(--acc);
+ background:color-mix(in srgb,var(--acc) 12%,var(--card));font-weight:600}
+/* Pastille "logo seul" : une tuile de taille fixe, pour que les cinq marques
+   s'alignent quelle que soit leur forme (carree, allongee, empilee). */
+#modalbox .sites button.tuile{min-width:84px;height:46px;justify-content:center;padding:6px 12px}
+#modalbox .sites button .logo{width:62px;height:30px;
+ filter:grayscale(1);opacity:.5;transition:filter var(--t),opacity var(--t)}
+#modalbox .sites button[aria-pressed=true] .logo{filter:none;opacity:1}
+/* La pastille "Tous" n'a pas de logo : une puce ronde tient le meme role. Elle
+   ne s'allume que si TOUT est choisi ; l'etat partiel reste neutre, sinon on
+   croit que "Tous" est actif alors qu'on vient de cocher un seul site. */
+#modalbox .sites .tous{font-weight:600}
+#modalbox .sites .tous i{width:15px;height:15px;border-radius:50%;border:1.5px solid currentColor;
+ display:inline-block;position:relative;flex:none}
+#modalbox .sites .tous[aria-pressed=true] i{background:currentColor}
+#modalbox .sites .tous.mi i{background:currentColor;box-shadow:inset 0 0 0 4px var(--card)}
+/* Logos des sites. Les deux variantes sont dans le DOM, seule celle du theme
+   courant s'affiche : rien a rejouer en JS quand on bascule clair/sombre, et le
+   mode auto suit la preference systeme sans code. */
+/* Le conteneur porte une taille definie et l'image la remplit en object-fit:
+   contain. Indispensable : trois de ces SVG n'ont qu'un viewBox, sans largeur ni
+   hauteur intrinseque. Avec width:auto ils s'effondrent a 0 dans un flex, et le
+   logo disparait sans que rien ne signale l'erreur. */
+.logo{display:inline-flex;align-items:center;justify-content:center;flex:none;line-height:0}
+.logo img{width:100%;height:100%;object-fit:contain;display:block}
+.logo .l-sombre{display:none}
+:root[data-mode=sombre] .logo .l-clair{display:none}
+:root[data-mode=sombre] .logo .l-sombre{display:block}
+@media(prefers-color-scheme:dark){
+ :root[data-mode=auto] .logo .l-clair{display:none}
+ :root[data-mode=auto] .logo .l-sombre{display:block}
+}
 .err{color:var(--ko);font-size:13px;margin-top:8px}
 .x{position:absolute;top:10px;right:12px;background:none;border:0;color:var(--mut);font:inherit;font-size:22px;
    line-height:1;padding:2px 7px;border-radius:var(--r2);cursor:pointer;transition:background var(--t),color var(--t),transform var(--t)}
@@ -1403,6 +1533,10 @@ body.modal-open #modal{display:flex;animation:fade .18s ease}
 .dep .s{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
 .dep.ok .s{color:var(--ok)}.dep.ko .s{color:var(--ko)}.dep.unknown .s{color:var(--mut)}
 .dep .d{color:var(--mut);font-size:13px;overflow-wrap:anywhere}
+/* Case d'un site : le logo prend la place du haut, le libelle passe dessous. */
+.dep.avec-logo{position:relative;padding-right:76px}
+.dep.avec-logo .logo{position:absolute;top:12px;right:14px;width:56px;height:26px;justify-content:flex-end}
+.dep.avec-logo.unknown .logo{filter:grayscale(1);opacity:.45}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 input,select{font:inherit;padding:8px 11px;border:1px solid var(--line);border-radius:var(--r2);
  background:var(--card);color:var(--fg);transition:border-color var(--t),box-shadow var(--t)}
@@ -1506,6 +1640,14 @@ main.kanban-mode{overflow:hidden;display:flex;flex-direction:column;padding-bott
 .kcard.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
 .kcard .t{font-weight:600;font-size:14px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .kcard .m{font-size:12px;color:var(--mut)}
+/* Pied de carte : la derniere ligne de texte a gauche, le logo du site a droite.
+   Une vraie rangee flex plutot qu'un logo en position absolue, comme ca le texte
+   ne peut jamais passer dessous, meme sur une carte etroite. */
+.kcard .pied{display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
+/* Hauteur et largeur plafonnees plutot qu'une hauteur fixe : les logos vont du
+   carre (LinkedIn) au tres allonge (Indeed) en passant par l'empile sur deux
+   lignes (HelloWork, Free-Work), qu'une hauteur fixe rendrait illisibles. */
+.kcard .pied .logo{width:54px;height:22px;opacity:.9;justify-content:flex-end}
 .karch{flex:0 0 auto;margin-top:10px;border:1px dashed var(--line);border-radius:var(--r);padding:10px 13px;color:var(--mut);font-size:13px;text-align:center;transition:all var(--t)}
 main.chat-mode{overflow:hidden;display:flex;flex-direction:column;padding-bottom:16px}
 #chatlog{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:4px 2px 12px;display:flex;flex-direction:column}
@@ -1572,13 +1714,18 @@ main.anim>*:nth-child(n+4){animation-delay:.12s}
 }catch(e){}})();
 </script>
 <script>
-var S={offers:[],searches:[],letters:[],cvs:[],cv:null,actions:[],audits:[],messages:[],questions:[],deps:{},version:'',watcher_alive:false,pdfjs:false};
+var S={offers:[],searches:[],letters:[],cvs:[],cv:null,actions:[],audits:[],messages:[],questions:[],deps:{},logos:{},version:'',watcher_alive:false,pdfjs:false};
 var tab='offres',filt={q:'',champ:'',reco:'',status:'',min:0,cv:'',contrat:''},kfilt={q:'',champ:'',cv:'',min:0},openId=null,openSearchId=null,cvView=null;
 var dragging=false,resizing=false,lockUntil=0,last='',tabRendu=null;
 var RECO={postuler:'Postuler',a_etudier:'À étudier',ne_pas_postuler:'Ne pas postuler'};
-var SITE={hellowork:'HelloWork',indeed:'Indeed',les_deux:'HelloWork et Indeed'};
+// les_deux n'est plus proposable : il ne reste que pour afficher les recherches
+// enregistrees avant le multi-sites.
+var SITE={hellowork:'HelloWork',indeed:'Indeed',france_travail:'France Travail',
+          free_work:'Free-Work',linkedin:'LinkedIn',les_deux:'HelloWork et Indeed'};
+var SITE_CHOIX=[['france_travail','France Travail'],['hellowork','HelloWork'],
+                ['free_work','Free-Work'],['indeed','Indeed'],['linkedin','LinkedIn']];
 var CONTRAT=[['tous','Tous les contrats'],['cdi','CDI'],['cdd','CDD'],['alternance','Alternance'],
-             ['stage','Stage'],['interim','Interim'],['temps_partiel','Temps partiel']];
+             ['stage','Stage'],['interim','Interim'],['temps_partiel','Temps partiel'],['freelance','Freelance']];
 var CONTRAT_NOM={};CONTRAT.forEach(function(x){CONTRAT_NOM[x[0]]=x[1];});
 function nomContrat(v){return v?(CONTRAT_NOM[v]||v):'';}
 // Reconnait le contrat d'une annonce a partir de son texte libre : les sites
@@ -1592,13 +1739,29 @@ function typeContrat(t){
  var mots=' '+x+' ', compact=x.replace(/ /g,'');
  if(/altern|apprentis|professionnalisation/.test(x))return 'alternance';
  if(/stage|stagiaire|internship/.test(x))return 'stage';
- if(/int[ée]rim|interim|mission temporaire/.test(x))return 'interim';
+ if(/int[ée]rim|interim|mission temporaire|contrat de mission|temporary/.test(x))return 'interim';
  if(/temps partiel|mi temps|part time/.test(x))return 'temps_partiel';
+ // Free-Work publie surtout des missions freelance ; LinkedIn etiquette la meme
+ // chose "Contract", d'ou le test sur le mot entier plutot que sur "contractuel".
+ if(/freelance|free lance|ind[ée]pendant|portage/.test(x)||mots.indexOf(' contract ')>=0)return 'freelance';
  if(mots.indexOf(' cdd ')>=0||/dur[ée]ed[ée]termin/.test(compact)||compact.indexOf('cdd')===0)return 'cdd';
  if(mots.indexOf(' cdi ')>=0||/dur[ée]eind[ée]termin/.test(compact)||compact.indexOf('cdi')===0)return 'cdi';
  return '';
 }
 function nomSite(v){return SITE[v]||v||'';}
+// Une recherche peut viser plusieurs sites : searches.site porte la liste.
+function nomSites(v){return String(v||'').split(',').map(nomSite).filter(Boolean).join(' et ');}
+// Logo d'un site : les deux variantes sont posees dans le DOM, le CSS montre
+// celle du theme courant. Pas de JS a rejouer quand on bascule clair/sombre,
+// et le mode auto suit la preference du systeme tout seul.
+function logoSite(site,classe){
+ var l=(S.logos||{})[site];
+ if(!l)return null;
+ var n=nomSite(site),f=h('span',{class:'logo'+(classe?' '+classe:''),title:n});
+ f.appendChild(h('img',{class:'l-clair',src:l.clair,alt:n,loading:'lazy'}));
+ f.appendChild(h('img',{class:'l-sombre',src:l.sombre||l.clair,alt:n,loading:'lazy'}));
+ return f;
+}
 var STAT={a_postuler:'À postuler',postulee:'Postulée',entretien:'Entretien',refus:'Refus',accepte:'Acceptée',ecartee:'Écartée',nouvelle:'Nouvelle'};
 var KAN=[['a_postuler','À postuler'],['postulee','Postulée'],['entretien','Entretien'],['refus','Refus'],['accepte','Acceptée']];
 var APPLIED=['postulee','entretien','refus','accepte'];
@@ -1759,24 +1922,74 @@ function searchForm(){
  var ville=h('input',{value:guessVille(p,lastS),placeholder:'Ville et code postal'});
  var obj=sel([['5','5 offres'],['10','10 offres'],['15','15 offres']],String(lastS.target_count||10),function(){majPlaf();});
  var plaf=h('select');
- // Le plafond suit l'objectif : 2x, 4x (defaut) et 6x. Il ne peut donc jamais
- // etre inferieur a l'objectif, la regle que start-search fait respecter.
+ // Le plafond suit l'objectif : de 2x a 12x, 4x par defaut. Il ne peut donc
+ // jamais etre inferieur a l'objectif, la regle que start-search fait respecter.
+ // C'est un plafond GLOBAL, reparti ensuite entre les sites choisis.
  function majPlaf(){
   var n=Number(obj.value),cur=Number(plaf.value)||0;
   plaf.replaceChildren();
-  [2,4,6].forEach(function(k){
+  [2,4,6,8,12].forEach(function(k){
    var v=n*k;
    plaf.appendChild(h('option',{value:String(v),text:v+' annonces'+(k===4?' (conseille)':'')}));
   });
-  plaf.value=String(cur&&cur%n===0?cur:n*4);
+  plaf.value=String(cur&&cur%n===0&&cur<=n*12?cur:n*4);
   if(!plaf.value)plaf.value=String(n*4);
  }
  majPlaf();
- var site=sel([['hellowork','HelloWork (recommande)'],['indeed','Indeed'],['les_deux','Les deux, HelloWork puis Indeed']],lastS.site||'hellowork',function(){});
+ // Une recherche peut viser plusieurs sites, d'ou des cases a cocher. On repart
+ // de la selection precedente, en traduisant l'ancien les_deux au passage.
+ var prec={};
+ String(lastS.site||'france_travail,hellowork').split(',').forEach(function(k){
+  k=k.trim();
+  if(k==='les_deux'){prec.hellowork=1;prec.indeed=1;}else if(k)prec[k]=1;
+ });
+ // Pastilles a bascule : aria-pressed porte l'etat, le CSS la colore. "Tous"
+ // prend un troisieme etat (.mi) quand une partie seulement est choisie.
+ var pastilles=[];
+ var site=h('div',{class:'sites'});
+ var tous=h('button',{type:'button',class:'tous','aria-pressed':'false'},
+  h('i'),h('span',{text:'Tous les sites'}));
+ function choisis(){return pastilles.filter(function(p){return p.actif;}).map(function(p){return p.site;});}
+ function majTous(){
+  var n=choisis().length;
+  tous.setAttribute('aria-pressed',n===pastilles.length?'true':'false');
+  tous.classList.toggle('mi',n>0&&n<pastilles.length);
+ }
+ tous.addEventListener('click',function(){
+  var vise=choisis().length<pastilles.length;   // partiel ou vide -> tout allumer
+  pastilles.forEach(function(p){p.actif=vise;p.maj();});
+  majTous();
+ });
+ site.appendChild(tous);
+ SITE_CHOIX.forEach(function(x){
+  // Le logo suffit a identifier le site : pas de libelle a cote, il est dans
+  // l'infobulle et dans aria-label. Sans fichier de logo, le nom reprend sa place.
+  var logo=logoSite(x[0]);
+  var b=h('button',{type:'button','aria-pressed':'false',title:x[1],'aria-label':x[1],
+   class:logo?'tuile':null});
+  if(logo)b.appendChild(logo);
+  else b.appendChild(h('span',{text:x[1]}));
+  var p={site:x[0],actif:!!prec[x[0]],maj:function(){b.setAttribute('aria-pressed',p.actif?'true':'false');}};
+  b.addEventListener('click',function(){p.actif=!p.actif;p.maj();majTous();});
+  p.maj();
+  pastilles.push(p);
+  site.appendChild(b);
+ });
+ majTous();
  var contrat=sel(CONTRAT,lastS.contract_wanted||'tous',function(){});
- [['Poste recherche',poste],['Ou (ville + code postal)',ville],['Type de contrat',contrat],
-  ['Objectif : offres a enregistrer',obj],['Plafond : annonces a lire au maximum',plaf],['Site',site]].forEach(function(x){
-   box.appendChild(h('label',{text:x[0]}));box.appendChild(x[1]);});
+ [['Poste recherche',poste,null],
+  ['Ou (ville + code postal)',ville,null],
+  ['Type de contrat',contrat,null],
+  ['Objectif : offres a garder',obj,'Claude s\\'arrete des qu\\'il en a trouve autant.'],
+  ['Plafond : annonces a lire au maximum',plaf,
+   'Plafond global, tous sites confondus : c\\'est ce qui limite le temps passe. Il est ensuite partage entre les sites choisis.'],
+  ['Sites a parcourir',site,
+   'Le plafond ci-dessus est divise entre les sites choisis, et ce qu\\'un site n\\'a pas consomme profite au suivant.']
+ ].forEach(function(x){
+   box.appendChild(h('label',{text:x[0]}));
+   box.appendChild(x[1]);
+   if(x[2])box.appendChild(h('div',{class:'aide',text:x[2]}));
+  });
  var err=h('div',{class:'err'});
  box.appendChild(err);
  box.appendChild(h('div',{class:'bar',style:'margin-top:14px'},
@@ -1785,7 +1998,9 @@ function searchForm(){
    if(!poste.value.trim()){err.textContent='Indique le poste recherche.';return;}
    if(!ville.value.trim()){err.textContent='Indique la ville et le code postal.';return;}
    if(Number(plaf.value)<Number(obj.value)){err.textContent='Le plafond ('+plaf.value+') doit etre au moins egal a l\\'objectif ('+obj.value+').';return;}
-   queue('new-search',{title:poste.value.trim(),location:ville.value.trim(),site:site.value,
+   var sites=choisis();
+   if(!sites.length){err.textContent='Choisis au moins un site.';return;}
+   queue('new-search',{title:poste.value.trim(),location:ville.value.trim(),site:sites.join(','),
     contract_wanted:contrat.value,
     target_count:Number(obj.value),max_seen:Number(plaf.value),cv_id:cv?cv.id:null},
     'Recherche '+poste.value.trim());
@@ -2079,7 +2294,12 @@ function kcard(o){
  if(meta)c.appendChild(h('div',{class:'m',text:meta}));
  var applied=APPLIED.indexOf(o.status)>=0&&o.applied_at;
  var when=applied?('candidature le '+d(o.applied_at)):(o.status_updated_at?('déplacée le '+d(o.status_updated_at)):'');
- if(when)c.appendChild(h('div',{class:'m',text:when}));
+ var logo=logoSite(o.site);
+ if(when||logo){
+  var pied=h('div',{class:'m pied'},h('span',{text:when}));
+  if(logo)pied.appendChild(logo);
+  c.appendChild(pied);
+ }
  return c;
 }
 function dropZone(el,status){
@@ -2202,7 +2422,7 @@ function vHist(m){
   tb.appendChild(h('tr',{class:openSearchId===s.id?'on':'',onclick:function(){openSearchId=s.id;render();}},
    h('td',{class:'nw',text:d(s.started_at)}),h('td',{class:'cut',title:s.title,text:s.title}),h('td',{class:'cut',title:s.location,text:s.location}),
    h('td',{class:'nw mut',text:s.contract_wanted&&s.contract_wanted!=='tous'?nomContrat(s.contract_wanted):'tous'}),
-   h('td',{class:'nw',text:nomSite(s.site)}),
+   h('td',{class:'nw',text:nomSites(s.site)}),
    h('td',{class:'mut cut',title:s.cv_filename||'',text:s.cv_filename||''}),h('td',{text:String(s.target_count||'')}),lues,
    h('td',{text:String(s.offers_saved)}),h('td',{text:s.finished_at?'Terminée':'En cours'})));});
  var tblH=h('table',{},h('thead',{},head),tb);
@@ -2218,7 +2438,7 @@ function pSearch(b){
  head.appendChild(h('h2',{style:'padding-right:32px',text:'Recherche #'+s.id}));
  head.appendChild(h('div',{class:'mut',text:[s.title,s.location,
   s.contract_wanted&&s.contract_wanted!=='tous'?nomContrat(s.contract_wanted):null,
-  nomSite(s.site)].filter(Boolean).join(' · ')}));
+  nomSites(s.site)].filter(Boolean).join(' · ')}));
  b.appendChild(head);
  var seen=s.offers_seen||0;
  [['Lancée le',d(s.started_at)],['Terminée le',s.finished_at?d(s.finished_at):'en cours'],
@@ -2356,7 +2576,8 @@ function pCv(b,p){
 /* ---- onglet Lettres ---- */
 function vDeps(m){
  var D=S.deps||{};
- var ordre=['node','script','base','vendor','cv','watcher','chrome','playwright','profil','hellowork','indeed','humanizer','audit_ats'];
+ var ordre=['node','script','base','vendor','cv','watcher','chrome','playwright','profil',
+            'france_travail','hellowork','free_work','indeed','linkedin','humanizer','audit_ats'];
  var LIB={ok:'fonctionnel',ko:'non fonctionnel',unknown:'non vérifié'};
  m.appendChild(h('div',{class:'bar'},
   actBtn('Revérifier les dépendances','check-deps'),
@@ -2364,8 +2585,12 @@ function vDeps(m){
  var g=h('div',{class:'deps'});
  ordre.forEach(function(k){
   var x=D[k];if(!x)return;
-  g.appendChild(h('div',{class:'dep '+(x.status||'unknown')},
+  // Les cases qui correspondent a un site d'emploi portent son logo : on repere
+  // d'un coup d'oeil laquelle est en echec, sans lire les libelles.
+  var logo=logoSite(k);
+  g.appendChild(h('div',{class:'dep '+(x.status||'unknown')+(logo?' avec-logo':'')},
    h('span',{class:'s',text:LIB[x.status]||x.status}),
+   logo,
    h('b',{text:x.label||k}),
    h('div',{class:'d',text:x.detail||''}),
    x.checked_at?h('div',{class:'d',text:'vérifié le '+d(x.checked_at)}):null));

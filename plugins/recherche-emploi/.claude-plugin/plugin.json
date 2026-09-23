@@ -1,9 +1,9 @@
 {
   "name": "recherche-emploi",
-  "description": "Assistant de recherche d'emploi en local : cherche sur HelloWork et Indeed avec Playwright, note chaque offre face au CV, dashboard sur localhost avec kanban de suivi et redaction de lettres de motivation.",
-  "version": "2.10.1",
+  "description": "Assistant de recherche d'emploi en local : cherche sur France Travail, HelloWork, Free-Work, Indeed et LinkedIn avec Playwright, note chaque offre face au CV, dashboard sur localhost avec kanban de suivi et redaction de lettres de motivation.",
+  "version": "2.11.0",
   "author": { "name": "sayn78", "url": "https://github.com/Sayn78" },
   "homepage": "https://github.com/Sayn78/claude-emploi",
   "license": "MIT",
-  "keywords": ["emploi", "job-search", "hellowork", "indeed", "cv", "dashboard", "francais"]
+  "keywords": ["emploi", "job-search", "france-travail", "hellowork", "free-work", "indeed", "linkedin", "cv", "dashboard", "francais"]
 }

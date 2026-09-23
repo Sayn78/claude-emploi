@@ -10,6 +10,24 @@ Les numéros suivent [semver](https://semver.org/lang/fr/) : le chiffre du milie
 
 ## recherche-emploi
 
+### 2.11.0 - 2026-09-23
+
+Trois sites de plus, et une recherche peut désormais en viser plusieurs à la fois.
+
+HelloWork et Indeed, c'était peu, d'autant qu'Indeed sert régulièrement une vérification anti-robot qui coupe la passe en cours. Restait HelloWork seul.
+
+- **France Travail** rejoint la liste, et devient le choix par défaut avec HelloWork : le plus gros volume d'offres en France, aucun compte, aucun captcha.
+- **Free-Work** couvre la tech et l'IT, en CDI comme en freelance. Proposé d'office quand le poste est informatique.
+- **LinkedIn** se lit en visiteur déconnecté, jamais connecté. Comptez une vingtaine d'annonces par recherche avant son mur de connexion : c'est peu, mais ce sont souvent des offres absentes des autres sites. Automatiser une session authentifiée violerait ses CGU et exposerait votre compte, le skill ne le fait pas et ne le proposera pas.
+- **Le choix du site devient un choix de sites.** La liste déroulante laisse place à des pastilles à bascule, une par site, qui s'allument quand vous les choisissez. Une pastille « Tous les sites » allume ou éteint tout d'un coup et passe en état partiel dès qu'il en manque un. Dans le chat, la question arrive en cases à cocher. Le budget d'annonces se répartit entre les passes, et le reliquat d'une passe est reporté sur la suivante.
+- **Les logos des sites entrent dans l'interface.** Les pastilles de sélection n'affichent que le logo, en couleur quand le site est choisi, en gris quand il ne l'est pas. Chaque carte du kanban porte le logo de sa provenance en bas à droite : on voit d'où vient une offre sans la lire. Les cases de vérification de l'onglet Système aussi.
+- **Chaque logo a sa version pour fond sombre.** HelloWork et Indeed sont des marques quasi noires, France Travail et Free-Work ont un texte bleu marine : sur le thème sombre ils disparaissaient. Le dashboard pose les deux versions dans la page et le CSS montre celle du thème courant, donc le mode auto suit la préférence du système sans rien recalculer.
+- Le formulaire de recherche explique ce qu'il demande : le plafond est **global, tous sites confondus**, et il est ensuite partagé entre les sites choisis. Il monte maintenant jusqu'à 12 fois l'objectif au lieu de 6. L'ordre va du plus productif au plus fragile, pour qu'un site qui bloque coûte le moins possible.
+- **`freelance` devient un type de contrat à part entière**, au lieu d'être confondu avec l'intérim. Le dashboard reconnaît aussi les étiquettes anglaises de LinkedIn et les libellés de France Travail.
+- Le dédoublonnage suit : une offre LinkedIn atteinte depuis la liste ou depuis sa page directe est reconnue comme la même.
+
+Rien à faire pour migrer. Les recherches déjà en base gardent leur site, et les anciennes lignes « les deux » s'affichent toujours correctement.
+
 ### 2.10.1 - 2026-09-23
 
 Corrige la détection de Playwright quand le skill est installé par plugin.

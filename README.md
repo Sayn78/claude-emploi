@@ -1,12 +1,12 @@
 # claude-emploi
 
-Deux skills Claude Code pour chercher un emploi en France. Le premier parcourt HelloWork et Indeed, note chaque annonce face à votre CV et tient un tableau de suivi de vos candidatures. Le second passe votre CV au crible des ATS, ces logiciels qui filtrent les candidatures avant qu'un humain les voie.
+Deux skills Claude Code pour chercher un emploi en France. Le premier parcourt France Travail, HelloWork, Free-Work, Indeed et LinkedIn, note chaque annonce face à votre CV et tient un tableau de suivi de vos candidatures. Le second passe votre CV au crible des ATS, ces logiciels qui filtrent les candidatures avant qu'un humain les voie.
 
 Tout tourne sur votre machine. Aucun compte à créer, aucun serveur distant, aucune donnée envoyée ailleurs que dans votre session Claude.
 
 **Jamais installé ce genre d'outil ?** Passez par le [guide pas à pas](GUIDE-DEBUTANT.md), écrit pour quelqu'un qui n'a jamais ouvert un terminal.
 
-> **In English.** Two French-language Claude Code skills for the French job market. `recherche-emploi` searches HelloWork and Indeed with a real browser, scores each posting against your PDF resume, stores results in a local SQLite database and serves a dashboard on `localhost:3000` with a kanban board and cover-letter drafting. `audit-cv-ats` audits a resume against applicant tracking systems and returns a score out of 20, the missing keywords and an optimised version. Everything runs locally; the skills speak French and target French job boards, so they are of limited use elsewhere.
+> **In English.** Two French-language Claude Code skills for the French job market. `recherche-emploi` searches France Travail, HelloWork, Free-Work, Indeed and LinkedIn with a real browser, scores each posting against your PDF resume, stores results in a local SQLite database and serves a dashboard on `localhost:3000` with a kanban board and cover-letter drafting. `audit-cv-ats` audits a resume against applicant tracking systems and returns a score out of 20, the missing keywords and an optimised version. Everything runs locally; the skills speak French and target French job boards, so they are of limited use elsewhere.
 
 ![Le tableau des offres, avec le detail a droite](docs/captures/01-offres.png)
 
@@ -14,7 +14,7 @@ Tout tourne sur votre machine. Aucun compte à créer, aucun serveur distant, au
 
 ## Les deux skills
 
-**`recherche-emploi`** - Vous dites « lance ma recherche d'emploi ». Claude ouvre un vrai navigateur, cherche sur HelloWork et Indeed, lit les annonces une par une, les compare à votre CV et garde celles qui passent la barre. Vous suivez tout depuis une page web locale : la liste des offres avec leur score, le détail de chacune, un kanban pour savoir où vous en êtes, vos CV en PDF, et un chat pour parler à Claude sans quitter la page.
+**`recherche-emploi`** - Vous dites « lance ma recherche d'emploi ». Claude ouvre un vrai navigateur, cherche sur les sites que vous avez cochés, lit les annonces une par une, les compare à votre CV et garde celles qui passent la barre. Vous suivez tout depuis une page web locale : la liste des offres avec leur score, le détail de chacune, un kanban pour savoir où vous en êtes, vos CV en PDF, et un chat pour parler à Claude sans quitter la page.
 
 **`audit-cv-ats`** - Vous dites « analyse mon CV ». Claude examine le fichier comme le ferait un ATS, note six critères, vous rend une note sur 20, la liste des mots-clés qui manquent et une version corrigée du CV.
 
@@ -173,13 +173,27 @@ Deux variantes selon votre installation. Si vous avez installé par plugin, la c
 Deux nombres décident de la durée :
 
 - **l'objectif**, le nombre d'offres que vous voulez garder. Dix est un bon départ ;
-- **le plafond**, le nombre d'annonces que Claude a le droit d'ouvrir avant d'abandonner. Quarante pour dix offres gardées, c'est la bonne proportion.
+- **le plafond**, le nombre d'annonces que Claude a le droit d'ouvrir avant d'abandonner. Quarante pour dix offres gardées, c'est la bonne proportion. C'est un plafond **global** : il compte toutes les annonces lues, tous sites confondus, et se partage ensuite entre les sites que vous avez retenus. Il monte jusqu'à douze fois l'objectif si vous voulez ratisser large.
 
 Sans plafond, une recherche trop large peut tourner très longtemps. La recherche s'arrête dès que l'un des deux est atteint, et le dashboard affiche « 12/40 lues » pour que vous sachiez où ça en est.
 
-Il vous demande aussi le **type de contrat** : CDI, CDD, alternance, stage, intérim, temps partiel, ou peu importe. Ce n'est pas déduit de votre CV, parce que ça se déduit mal : on peut avoir dix ans de métier et chercher une alternance en reconversion. Quand un contrat précis est demandé, il filtre dès la page de résultats plutôt que de dépenser votre plafond de lecture sur des annonces hors sujet, et une offre dont le contrat ne correspond pas est écartée même si elle est bonne par ailleurs.
+Il vous demande aussi le **type de contrat** : CDI, CDD, alternance, stage, intérim, temps partiel, freelance, ou peu importe. Ce n'est pas déduit de votre CV, parce que ça se déduit mal : on peut avoir dix ans de métier et chercher une alternance en reconversion. Quand un contrat précis est demandé, il filtre dès la page de résultats plutôt que de dépenser votre plafond de lecture sur des annonces hors sujet, et une offre dont le contrat ne correspond pas est écartée même si elle est bonne par ailleurs.
 
-Claude peut chercher sur HelloWork, sur Indeed, ou sur les deux. Sur les deux, il commence par HelloWork puis fait un point avant de continuer : bilan du premier site, budget restant, et vous choisissez de continuer, d'arrêter ou d'élargir.
+Enfin, **sur quels sites chercher**. Cliquez les logos que vous voulez, ou « Tous les sites » d'un coup. Un logo en couleur, c'est un site retenu ; en gris, il est ignoré.
+
+| Site | Ce qu'il apporte |
+| --- | --- |
+| **France Travail** | Le plus gros volume d'offres en France, aucun blocage. Retenu par défaut |
+| **HelloWork** | Bonne couverture générale, peu de blocages. Retenu par défaut |
+| **Free-Work** | Tech et IT uniquement, en CDI comme en freelance |
+| **Indeed** | Large, mais vérifications anti-robot fréquentes |
+| **LinkedIn** | Des offres absentes des autres sites, mais une vingtaine par recherche au maximum |
+
+Chaque offre garde le logo de sa provenance, en bas à droite de sa carte dans le kanban : vous voyez d'où elle vient sans l'ouvrir.
+
+Le budget d'annonces se répartit entre les sites retenus, et ce qu'une passe n'a pas consommé profite à la suivante. Entre chaque site, Claude fait un point : bilan du site qui vient d'être parcouru, budget restant, et vous choisissez de continuer, d'arrêter ou d'élargir.
+
+LinkedIn se lit **en visiteur, jamais connecté**. Le site coupe après une vingtaine d'annonces avec un « Sign in to view more jobs » : Claude s'arrête là et passe au suivant. Automatiser une session authentifiée violerait les conditions d'utilisation de LinkedIn et pourrait faire restreindre votre compte, donc il ne le fait pas, même si vous êtes déjà connecté dans le navigateur.
 
 ### Lire les offres
 
@@ -249,7 +263,7 @@ Le bouton « Vérifier les dépendances » affiche une case par pré-requis. Ver
 | Playwright MCP | la commande `claude mcp add` plus haut, puis relancer Claude Code |
 | Watcher | lancer le skill dans une session Claude Code |
 | Skill humanizer / audit-cv-ats | les installer, voir les pré-requis |
-| HelloWork / Indeed | un captcha ou un écran de vérification est apparu, voir les astuces |
+| France Travail / HelloWork / Free-Work / Indeed / LinkedIn | un captcha ou un écran de vérification est apparu, voir les astuces. Une case par site, grise tant que Claude n'a pas testé ce site |
 
 ![La page des dependances, une case par pre-requis](docs/captures/06-systeme.png)
 
@@ -267,9 +281,9 @@ Le bouton **Theme** en haut à droite ouvre trois modes - Auto, Clair, Sombre - 
 
 **Commencez petit.** Dix offres pour quarante annonces lues. Vous verrez tout de suite si vos mots-clés sont les bons, et vous ajusterez avant d'y passer une heure.
 
-**Connectez-vous une fois sur HelloWork et Indeed** dans le navigateur ouvert par Playwright. Ce n'est pas nécessaire pour chercher, mais Indeed affiche parfois un mur de connexion en deuxième page de résultats, et le profil garde vos cookies d'une session à l'autre.
+**Passez une fois sur HelloWork et Indeed** dans le navigateur ouvert par Playwright, en acceptant ou refusant leur bandeau de cookies. Ce n'est pas nécessaire pour chercher, mais Indeed affiche parfois un mur de connexion en deuxième page de résultats, et le profil garde vos cookies d'une session à l'autre. France Travail et Free-Work n'en ont pas besoin. Pour LinkedIn, ne vous connectez pas : Claude ne se servira pas de votre session, par choix.
 
-**Un captcha n'est pas une panne.** Claude s'arrête et vous demande de le résoudre vous-même dans la fenêtre, puis il reprend. Il ne cherchera jamais à le contourner. Si Indeed en remet un deuxième, basculez sur HelloWork.
+**Un captcha n'est pas une panne.** Claude s'arrête et vous demande de le résoudre vous-même dans la fenêtre, puis il reprend. Il ne cherchera jamais à le contourner. Si un site en remet un deuxième, il abandonne ce site et reporte son budget sur les autres.
 
 **Auditez votre CV avant de chercher.** Les mots-clés que l'audit signale comme manquants sont exactement ceux que les annonces emploient : ils font de bons termes de recherche.
 
@@ -285,7 +299,7 @@ Le bouton **Theme** en haut à droite ouvre trois modes - Auto, Clair, Sombre - 
 
 Votre CV, la base de données et le dashboard restent sur votre machine. Le serveur web n'écoute que sur `127.0.0.1`, il n'est pas accessible depuis votre réseau.
 
-Ce qui sort de la machine : les pages d'annonces que le navigateur va chercher sur HelloWork et Indeed, et le contenu que Claude traite pendant la session, comme dans n'importe quelle conversation Claude Code.
+Ce qui sort de la machine : les pages d'annonces que le navigateur va chercher sur les sites d'emploi, et le contenu que Claude traite pendant la session, comme dans n'importe quelle conversation Claude Code.
 
 ---
 
@@ -311,8 +325,9 @@ MIT, voir [LICENSE](LICENSE).
 
 - [PDF.js](https://mozilla.github.io/pdf.js/) (Mozilla Foundation), Apache 2.0. Les fichiers `scripts/vendor/` sont distribués tels quels, entête de licence comprise.
 - [humanizer](https://github.com/blader/humanizer), skill tiers, à installer séparément.
+- Les logos de `scripts/logo/` sont les marques de France Travail, HelloWork, Free-Work, Indeed et LinkedIn. Ils restent la propriété de leurs titulaires et **ne sont pas couverts par la licence MIT de ce projet**. Ils servent uniquement à identifier le site d'où vient une offre. Les variantes `-sombre` sont des déclinaisons monochromes pour fond sombre.
 - Les grilles ATS d'`audit-cv-ats` s'appuient sur le comportement documenté de Workday, Taleo, SuccessFactors, iCIMS, Greenhouse, Lever, Talentsoft, Flatchr, Teamtailor et Recruitee.
 
 Les captures de ce README proviennent d'une base de démonstration : le CV, les entreprises et les annonces sont inventés.
 
-Projet indépendant, sans lien avec Anthropic, HelloWork ou Indeed.
+Projet indépendant, sans lien avec Anthropic, France Travail, HelloWork, Free-Work, Indeed ou LinkedIn.
