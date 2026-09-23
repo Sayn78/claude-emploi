@@ -159,6 +159,8 @@ Dans l'onglet **Offres**, un clic sur une carte ouvre le détail à droite : des
 
 Trois filtres au-dessus de la liste : par poste, par entreprise, par ville.
 
+Les colonnes se redimensionnent à la souris : tirez la bordure droite d'un en-tête pour donner de la place à un intitulé trop long, double-cliquez dessus pour revenir à la largeur d'origine. Vos largeurs sont retenues d'une session à l'autre.
+
 ### Suivre ses candidatures
 
 L'onglet **Suivi** est un kanban en cinq colonnes : À postuler, Postulée, Entretien, Refus, Acceptée. Les offres arrivent dans la première. Vous les déplacez à la souris au fur et à mesure. Une note libre par offre permet de retenir le nom d'un contact, une date de rappel ou ce qui s'est dit en entretien.

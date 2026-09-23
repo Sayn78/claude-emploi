@@ -446,6 +446,8 @@ La réponse arrive comme n'importe quelle action :
 
 Si l'utilisateur ne répond pas et que tu veux abandonner la question, `node jobsearch.js cancel-question <id>` la retire de la page. `node jobsearch.js answers --pending` liste celles qui attendent encore - utile au démarrage d'une session pour ne pas laisser une question orpheline à l'écran.
 
+**Le chat repart à zéro à chaque session.** En armant le watcher, tu ouvres une conversation neuve : le chat du dashboard n'affiche que les messages de la session en cours. Sans ça il empilerait tout l'historique de toutes les sessions passées et deviendrait illisible. Rien n'est supprimé pour autant, `node jobsearch.js list-messages --all` relit les précédentes. Les questions restées sans réponse dans une session morte sont annulées au passage : les laisser cliquables serait un piège, plus personne ne peut y répondre.
+
 **Une seule session à la fois.** Le watcher inscrit son PID en base. Si une autre session Claude Code écoute déjà ce dossier, `watch-actions` refuse de démarrer et te dit quel PID occupe la place : sans ça, les clics de l'utilisateur partiraient dans l'autre session. Demande-lui de fermer l'autre session ; s'il confirme qu'elle est morte ou qu'il veut que ce soit toi, relance avec `watch-actions --force`, et l'ancien watcher se retire tout seul à sa prochaine sonde.
 
 ## Suivi des candidatures
@@ -496,7 +498,7 @@ Toutes renvoient du JSON. En cas d'erreur : code de sortie 1 et `{"ok": false, "
 | `ask --file f` | Pose une question dans le chat, avec des options cliquables |
 | `answers [--pending]` | Questions posées et réponses reçues |
 | `cancel-question <id>` | Retire de la page une question restée sans réponse |
-| `list-messages [--limit N]` | Historique du chat |
+| `list-messages [--limit N] [--all]` | Chat de la session en cours, ou de toutes avec `--all` |
 | `deps` / `set-dep --file f` | État des dépendances / renseigne `playwright`, `hellowork` ou `indeed` |
 | `delete-offer <id>` | Supprime une offre **et ses lettres** |
 | `delete-letter <id>` | Supprime une lettre |

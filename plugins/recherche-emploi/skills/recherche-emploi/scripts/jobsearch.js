@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.7.1';
+const VERSION = '2.8.0';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -15,7 +15,7 @@ const DATA_DIR = path.join(ROOT, 'data');
 const VENDOR_DIR = path.join(ROOT, 'vendor');
 const DB_PATH = path.join(DATA_DIR, 'jobsearch.db');
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const RECOS = ['postuler', 'a_etudier', 'ne_pas_postuler'];
 const KANBAN = ['a_postuler', 'postulee', 'entretien', 'refus', 'accepte'];
 const APPLIED = ['postulee', 'entretien', 'refus', 'accepte'];
@@ -105,7 +105,9 @@ CREATE TABLE IF NOT EXISTS messages (
   role TEXT NOT NULL,                -- user | claude
   content TEXT NOT NULL,
   action_id INTEGER REFERENCES actions(id) ON DELETE SET NULL,
-  created_at TEXT NOT NULL);
+  created_at TEXT NOT NULL,
+  session_id TEXT);                  -- conversation en cours, voir migration 8
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
 CREATE INDEX IF NOT EXISTS idx_cv_audits_cv ON cv_audits(cv_id);
 CREATE TABLE IF NOT EXISTS questions (
@@ -227,6 +229,14 @@ const MIGRATIONS = [
         created_at TEXT NOT NULL, answered_at TEXT);
       CREATE INDEX IF NOT EXISTS idx_questions_status ON questions(status);
     `);
+  } },
+  { v: 8, name: 'chat par session', up(db) {
+    // Une colonne neuve, les lignes existantes sont rattachees a une session
+    // close : le chat repart vide a la prochaine session sans rien perdre.
+    const cols = db.prepare('PRAGMA table_info(messages)').all().map((c) => c.name);
+    if (!cols.includes('session_id')) db.exec('ALTER TABLE messages ADD COLUMN session_id TEXT');
+    db.prepare("UPDATE messages SET session_id = 'sessions-precedentes' WHERE session_id IS NULL").run();
+    db.exec('CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)');
   } },
 ];
 
@@ -489,6 +499,15 @@ function mcpProfileInfo(db) {
   }
   PROFILE_CACHE = { at: Date.now(), val };
   return val;
+}
+
+// Identifiant de la conversation en cours. Le watcher en ouvre une a chaque
+// demarrage : le chat du dashboard ne montre que la session courante, sinon il
+// accumule l'historique de toutes les sessions Claude Code passees.
+function sessionChat(db) {
+  let id = getSetting(db, 'chat_session');
+  if (!id) { id = 's-' + now(); setSetting(db, 'chat_session', id); }
+  return id;
 }
 
 function depsState(db) {
@@ -825,6 +844,24 @@ const commands = {
     const startedAt = now();
     setSetting(db, 'watcher_pid', String(process.pid));
     setSetting(db, 'watcher_started_at', startedAt);
+    // Conversation neuve : le chat du dashboard repart vide a chaque session
+    // Claude Code, au lieu d'empiler les echanges de toutes les precedentes.
+    // Rien n'est supprime, les anciens messages restent lisibles avec
+    // list-messages --all.
+    const sessionPrec = getSetting(db, 'chat_session');
+    const session = 's-' + startedAt;
+    setSetting(db, 'chat_session', session);
+    // Une question restee sans reponse dans la session d'avant n'a plus
+    // personne pour la traiter : la laisser cliquable serait un piege.
+    const orphelines = db.prepare(`UPDATE questions SET status = 'cancelled', answered_at = ?
+      WHERE status = 'pending' AND message_id IN (SELECT id FROM messages WHERE session_id IS NOT ?)`)
+      .run(startedAt, session);
+    const restes = sessionPrec
+      ? db.prepare('SELECT COUNT(*) c FROM messages WHERE session_id = ?').get(sessionPrec).c : 0;
+    if (restes || orphelines.changes) {
+      process.stderr.write(JSON.stringify({ chat: 'nouvelle session', session,
+        messages_archives: restes, questions_annulees: orphelines.changes }) + '\n');
+    }
     const stale = db.prepare(`UPDATE actions SET status = 'failed', done_at = ?, result = 'session interrompue'
       WHERE status = 'taken' AND taken_at < ?`).run(now(), new Date(Date.now() - 600000).toISOString());
     if (stale.changes) process.stderr.write(JSON.stringify({ nettoyees: stale.changes }) + '\n');
@@ -925,8 +962,8 @@ const commands = {
     const d = input(args);
     if (!d.content || !String(d.content).trim()) fail('Champ requis : content');
     const db = openDb();
-    const r = db.prepare('INSERT INTO messages (role, content, action_id, created_at) VALUES (\'claude\', ?, ?, ?)')
-      .run(String(d.content), d.action_id ? Number(d.action_id) : null, now());
+    const r = db.prepare('INSERT INTO messages (role, content, action_id, created_at, session_id) VALUES (\'claude\', ?, ?, ?, ?)')
+      .run(String(d.content), d.action_id ? Number(d.action_id) : null, now(), sessionChat(db));
     let closed = false;
     if (d.action_id) {
       const a = db.prepare('UPDATE actions SET status = \'done\', done_at = ?, result = ? WHERE id = ? AND status <> \'done\'')
@@ -952,7 +989,7 @@ const commands = {
     });
     const db = openDb();
     const t = now();
-    const m = db.prepare('INSERT INTO messages (role, content, created_at) VALUES (\'claude\', ?, ?)').run(prompt, t);
+    const m = db.prepare('INSERT INTO messages (role, content, created_at, session_id) VALUES (\'claude\', ?, ?, ?)').run(prompt, t, sessionChat(db));
     const q = db.prepare(`INSERT INTO questions (prompt, options_json, multi, allow_text, message_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?)`)
       .run(prompt, JSON.stringify(clean), d.multi ? 1 : 0, d.allow_text ? 1 : 0, Number(m.lastInsertRowid), t);
@@ -988,7 +1025,9 @@ const commands = {
   'list-messages'(args) {
     const n = Math.min(500, Math.max(1, Number(arg(args, '--limit')) || 50));
     const db = openDb();
-    const rows = db.prepare('SELECT * FROM messages ORDER BY id DESC LIMIT ?').all(n).reverse();
+    const rows = args.includes('--all')
+      ? db.prepare('SELECT * FROM messages ORDER BY id DESC LIMIT ?').all(n).reverse()
+      : db.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?').all(sessionChat(db), n).reverse();
     out({ ok: true, count: rows.length, messages: rows });
   },
 
@@ -1083,7 +1122,8 @@ function serve(port) {
           watcher_started_at: getSetting(db, 'watcher_started_at'),
           messages: db.prepare(`SELECT m.id, m.role, m.content, m.action_id, m.created_at, a.status AS action_status
             FROM messages m LEFT JOIN actions a ON a.id = m.action_id
-            ORDER BY m.id DESC LIMIT 40`).all().reverse(),
+            WHERE m.session_id = ?
+            ORDER BY m.id DESC LIMIT 40`).all(sessionChat(db)).reverse(),
           questions: db.prepare('SELECT * FROM questions ORDER BY id DESC LIMIT 20').all().map((r) => {
             let o = [], a = null;
             try { o = JSON.parse(r.options_json); } catch {}
@@ -1179,8 +1219,8 @@ function serve(port) {
           const payload = { question_id: q.id, prompt: q.prompt, values: connus, labels: libelles, text: libre || null };
           const a = queueAction(db, 'answer', payload, libelles.join(', ').slice(0, 60));
           if (a.error) return json(res, 400, { error: a.error });
-          db.prepare('INSERT INTO messages (role, content, action_id, created_at) VALUES (\'user\', ?, ?, ?)')
-            .run(libelles.join(', '), a.action_id, t);
+          db.prepare('INSERT INTO messages (role, content, action_id, created_at, session_id) VALUES (\'user\', ?, ?, ?, ?)')
+            .run(libelles.join(', '), a.action_id, t, sessionChat(db));
           db.prepare('UPDATE questions SET status = \'answered\', answer_json = ?, action_id = ?, answered_at = ? WHERE id = ?')
             .run(JSON.stringify({ values: connus, labels: libelles, text: libre || null }), a.action_id, t, q.id);
           json(res, 200, { ok: true, action_id: a.action_id, watcher_alive: watcherAlive(db) });
@@ -1195,8 +1235,8 @@ function serve(port) {
           if (content.length > 8000) return json(res, 400, { error: 'message trop long (8000 caracteres maximum)' });
           const a = queueAction(db, 'message', { content }, content.slice(0, 60));
           if (a.error) return json(res, 400, { error: a.error });
-          const m = db.prepare('INSERT INTO messages (role, content, action_id, created_at) VALUES (\'user\', ?, ?, ?)')
-            .run(content, a.action_id, now());
+          const m = db.prepare('INSERT INTO messages (role, content, action_id, created_at, session_id) VALUES (\'user\', ?, ?, ?, ?)')
+            .run(content, a.action_id, now(), sessionChat(db));
           json(res, 200, { ok: true, message_id: Number(m.lastInsertRowid), action_id: a.action_id, watcher_alive: watcherAlive(db) });
         });
       }
@@ -1366,6 +1406,16 @@ tbody tr:hover{background:var(--tint)}tr:last-child td{border-bottom:0}
 tbody tr.on{background:var(--tint);box-shadow:inset 3px 0 0 var(--acc)}
 /* colonnes secondaires : une ligne, coupee proprement, texte complet en infobulle */
 td.cut{max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* largeurs pilotees par le colgroup : sans table-layout fixe, le navigateur
+   recalcule tout a partir du contenu et ignore ce qu'on tire a la souris. */
+table.fixe{table-layout:fixed;min-width:0;width:100%}
+table.fixe td,table.fixe th{overflow:hidden;text-overflow:ellipsis}
+table.fixe td.cut,table.fixe td.nw,table.fixe td.poste{max-width:none;min-width:0}
+table.fixe td.poste{white-space:normal}
+table.fixe th{position:relative;white-space:nowrap}
+.rz{position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;touch-action:none}
+.rz::before{content:'';position:absolute;top:22%;bottom:22%;right:4px;width:1px;background:var(--line)}
+.rz:hover::before,.rz.on::before{top:0;bottom:0;right:3px;width:2px;background:var(--acc)}
 td.cut.w2{max-width:142px}td.cut.w0{max-width:96px}
 td.nw{white-space:nowrap}
 td.poste{min-width:186px}
@@ -1868,6 +1918,67 @@ function renderPanel(){
 }
 
 /* ---- onglet Offres ---- */
+// --- colonnes redimensionnables ------------------------------------------
+// Les intitules d'annonces sont longs et personne n'a la meme idee de ce qui
+// merite de la place. Chaque colonne se tire a la souris et sa largeur est
+// gardee dans le navigateur, par tableau. Double-clic sur la poignee : retour
+// a la largeur par defaut.
+var COLS_MIN = 56;
+
+function colsLues(cle, defauts) {
+ var w = defauts.slice();
+ try {
+  var v = JSON.parse(localStorage.getItem('jobsearch.cols.' + cle) || 'null');
+  if (Array.isArray(v) && v.length === defauts.length) {
+   v.forEach(function(x, i) { if (typeof x === 'number' && x >= COLS_MIN) w[i] = x; });
+  }
+ } catch (e) {}
+ return w;
+}
+function colsEcrites(cle, w) {
+ try { localStorage.setItem('jobsearch.cols.' + cle, JSON.stringify(w)); } catch (e) {}
+}
+
+// table : le <table>, deja rempli de son <thead>. defauts : une largeur par colonne.
+function colonnesReglables(table, cle, defauts) {
+ var w = colsLues(cle, defauts);
+ var cg = h('colgroup');
+ w.forEach(function(x) { cg.appendChild(h('col', { style: 'width:' + x + 'px' })); });
+ table.insertBefore(cg, table.firstChild);
+ table.classList.add('fixe');
+
+ var ths = table.querySelectorAll('thead th');
+ [].forEach.call(ths, function(th, i) {
+  if (i >= w.length - 1) return;            // rien a tirer apres la derniere
+  var poignee = h('i', { class: 'rz', title: 'Glisser pour redimensionner, double-clic pour revenir au defaut' });
+  poignee.addEventListener('pointerdown', function(e) {
+   e.preventDefault(); e.stopPropagation();
+   poignee.setPointerCapture(e.pointerId);
+   poignee.classList.add('on');
+   resizing = true;                          // gele le sondage pendant le glissement
+   var x0 = e.clientX, l0 = cg.children[i].getBoundingClientRect().width;
+   function bouge(ev) {
+    var n = Math.max(COLS_MIN, Math.round(l0 + ev.clientX - x0));
+    w[i] = n; cg.children[i].style.width = n + 'px';
+   }
+   function lache(ev) {
+    poignee.releasePointerCapture(ev.pointerId);
+    poignee.removeEventListener('pointermove', bouge);
+    poignee.removeEventListener('pointerup', lache);
+    poignee.classList.remove('on');
+    resizing = false; colsEcrites(cle, w);
+   }
+   poignee.addEventListener('pointermove', bouge);
+   poignee.addEventListener('pointerup', lache);
+  });
+  poignee.addEventListener('dblclick', function(e) {
+   e.preventDefault(); e.stopPropagation();
+   w[i] = defauts[i]; cg.children[i].style.width = defauts[i] + 'px'; colsEcrites(cle, w);
+  });
+  th.appendChild(poignee);
+ });
+}
+
 function vOffres(m){
  var multi=S.cvs.length>1;
  var q=h('input',{id:'f-offres',placeholder:CHAMP_PH[filt.champ],value:filt.q,oninput:function(){filt.q=q.value;body();}});
@@ -1881,7 +1992,11 @@ function vOffres(m){
  m.appendChild(bar);
  var heads=['Score','Poste','Entreprise','Lieu','Contrat','Salaire','Publiée','Avis','Statut'].concat(multi?['CV']:[]).concat(['Trouvée le','Lien']);
  var tb=h('tbody'),head=h('tr');heads.forEach(function(t){head.appendChild(h('th',{text:t}));});
- m.appendChild(h('div',{class:'wrap'},h('table',{},h('thead',{},head),tb)));
+ var tbl=h('table',{},h('thead',{},head),tb);
+ m.appendChild(h('div',{class:'wrap'},tbl));
+ // 12 colonnes quand plusieurs CV coexistent, 11 sinon : les defauts suivent.
+ var defs=[100,198,142,130,98,122,118,96,106].concat(multi?[98]:[]).concat([118,88]);
+ colonnesReglables(tbl,multi?'offres12':'offres11',defs);
  function body(){
   tb.replaceChildren();
   var rows=S.offers.filter(function(o){
@@ -2048,10 +2163,12 @@ function vHist(m){
   var lues=h('td',{},h('span',{text:String(seen)+(s.max_seen!=null?' / '+s.max_seen:'')}),
    capped?h('div',{class:'mut',style:'font-size:12px',text:'plafond atteint'}):null);
   tb.appendChild(h('tr',{class:openSearchId===s.id?'on':'',onclick:function(){openSearchId=s.id;render();}},
-   h('td',{class:'nw',text:d(s.started_at)}),h('td',{text:s.title}),h('td',{text:s.location}),h('td',{class:'nw',text:nomSite(s.site)}),
-   h('td',{class:'mut',text:s.cv_filename||''}),h('td',{text:String(s.target_count||'')}),lues,
+   h('td',{class:'nw',text:d(s.started_at)}),h('td',{class:'cut',title:s.title,text:s.title}),h('td',{class:'cut',title:s.location,text:s.location}),h('td',{class:'nw',text:nomSite(s.site)}),
+   h('td',{class:'mut cut',title:s.cv_filename||'',text:s.cv_filename||''}),h('td',{text:String(s.target_count||'')}),lues,
    h('td',{text:String(s.offers_saved)}),h('td',{text:s.finished_at?'Terminée':'En cours'})));});
- m.appendChild(h('div',{class:'wrap'},h('table',{},h('thead',{},head),tb)));
+ var tblH=h('table',{},h('thead',{},head),tb);
+ m.appendChild(h('div',{class:'wrap'},tblH));
+ colonnesReglables(tblH,'historique',[112,220,150,140,190,92,120,124,104]);
 }
 function pSearch(b){
  if(openSearchId==null)return false;
