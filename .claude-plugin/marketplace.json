@@ -11,7 +11,7 @@
       "name": "recherche-emploi",
       "source": "./plugins/recherche-emploi",
       "description": "Cherche sur HelloWork et Indeed, note les offres face au CV, dashboard local avec kanban de suivi et lettres de motivation",
-      "version": "2.6.3",
+      "version": "2.7.0",
       "author": { "name": "sayn78" },
       "homepage": "https://github.com/Sayn78/claude-emploi",
       "license": "MIT"
