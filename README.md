@@ -130,6 +130,8 @@ Deux nombres décident de la durée :
 
 Sans plafond, une recherche trop large peut tourner très longtemps. La recherche s'arrête dès que l'un des deux est atteint, et le dashboard affiche « 12/40 lues » pour que vous sachiez où ça en est.
 
+Il vous demande aussi le **type de contrat** : CDI, CDD, alternance, stage, intérim, temps partiel, ou peu importe. Ce n'est pas déduit de votre CV, parce que ça se déduit mal : on peut avoir dix ans de métier et chercher une alternance en reconversion. Quand un contrat précis est demandé, il filtre dès la page de résultats plutôt que de dépenser votre plafond de lecture sur des annonces hors sujet, et une offre dont le contrat ne correspond pas est écartée même si elle est bonne par ailleurs.
+
 Claude peut chercher sur HelloWork, sur Indeed, ou sur les deux. Sur les deux, il commence par HelloWork puis fait un point avant de continuer : bilan du premier site, budget restant, et vous choisissez de continuer, d'arrêter ou d'élargir.
 
 ### Lire les offres
@@ -148,7 +150,7 @@ Une offre n'est enregistrée qu'à partir de 50 sur 100, **et** 15 sur 40 en com
 
 Dans l'onglet **Offres**, un clic sur une carte ouvre le détail à droite : description complète, salaire et date de publication quand l'annonce les donne, ce qui colle avec votre CV, ce qui manque, et un conseil en deux ou trois phrases. La largeur du panneau se règle à la souris en tirant sur la barre de séparation, et se retient d'une fois sur l'autre.
 
-Trois filtres au-dessus de la liste : par poste, par entreprise, par ville.
+Les filtres au-dessus de la liste : par poste, par entreprise ou par ville, par avis, par statut, par type de contrat, par score minimum.
 
 Les colonnes se redimensionnent à la souris : tirez la bordure droite d'un en-tête pour donner de la place à un intitulé trop long, double-cliquez dessus pour revenir à la largeur d'origine. Vos largeurs sont retenues d'une session à l'autre.
 

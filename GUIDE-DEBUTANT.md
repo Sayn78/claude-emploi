@@ -129,7 +129,9 @@ Corrigez votre CV, redéposez-le, puis passez à la suite. Les mots-clés qui ma
 
 ### Ensuite, une recherche modeste
 
-Pour la première, demandez **10 offres pour 40 annonces lues au maximum**. Vous verrez tout de suite si vos mots-clés sont les bons. Une recherche trop large vous noie ; une recherche trop étroite ne ramène rien.
+Claude vous demande le poste, la ville, le **type de contrat** (CDI, alternance, CDD...), et deux nombres. Répondez franchement sur le contrat : il ne le devine pas et ne cherche pas à le déduire de votre CV.
+
+Pour la première recherche, demandez **10 offres pour 40 annonces lues au maximum**. Vous verrez tout de suite si vos mots-clés sont les bons. Une recherche trop large vous noie ; une recherche trop étroite ne ramène rien.
 
 Si les résultats sont à côté, changez l'intitulé plutôt que la ville. « Assistant administratif » et « Secrétaire administratif » ne ramènent pas les mêmes annonces.
 

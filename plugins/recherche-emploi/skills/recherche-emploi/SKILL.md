@@ -151,21 +151,24 @@ Charge le profil du CV choisi (`node jobsearch.js get-cv <id>`) et **propose des
 - ville et code postal ← `profile.location` ; si le code postal manque, demande-le explicitement ;
 - en dernier recours, la `location` de la dernière recherche en base.
 
-Un seul appel `AskUserQuestion` avec ces quatre questions :
+Pose ces cinq questions. `AskUserQuestion` en accepte quatre par appel : fais-en deux, ou passe par `ask` si le watcher est déjà armé.
 
 1. **Poste recherché** - options : `<headline>` · `<titre de la dernière expérience>` · Autre.
 2. **Où** (ville + code postal) - options : `<profile.location>` · `<location de la dernière recherche>` · Autre.
-3. **Objectif** : combien d'offres correspondantes enregistrer avant de s'arrêter - 5 · 10 · 15.
-4. **Plafond** : combien d'annonces lire au maximum, quelle que soit la moisson - 20 · 40 · 60.
+3. **Type de contrat** - options : **CDI** · **Alternance ou stage** · **CDD ou intérim** · **Peu importe**. Ne devine pas à partir du CV : quelqu'un avec dix ans d'expérience peut chercher une alternance en reconversion, et un profil junior peut viser un CDI. La valeur envoyée au script est `cdi`, `cdd`, `alternance`, `stage`, `interim`, `temps_partiel` ou `tous`.
+4. **Objectif** : combien d'offres correspondantes enregistrer avant de s'arrêter - 5 · 10 · 15.
+5. **Plafond** : combien d'annonces lire au maximum, quelle que soit la moisson - 20 · 40 · 60.
 
-Pour la question 4, dis en une ligne en quoi elle diffère de la 3 : l'objectif limite ce qu'on garde, le plafond limite le temps passé et le nombre de pages ouvertes. Sans plafond, un intitulé trop large fait parcourir des dizaines de pages. Propose par défaut quatre fois l'objectif. Si l'utilisateur choisit un plafond inférieur à l'objectif, dis-le-lui : le script refusera.
+Pour la question 5, dis en une ligne en quoi elle diffère de la 4 : l'objectif limite ce qu'on garde, le plafond limite le temps passé et le nombre de pages ouvertes. Sans plafond, un intitulé trop large fait parcourir des dizaines de pages. Propose par défaut quatre fois l'objectif. Si l'utilisateur choisit un plafond inférieur à l'objectif, dis-le-lui : le script refusera.
 
 Enregistre ensuite la recherche : écris `tmp/search.json`, puis `node jobsearch.js start-search --file tmp/search.json`. Garde le `search_id`.
 
 ```json
 {"title": "Administrateur réseaux", "location": "Nantes 44000", "site": "hellowork",
- "cv_id": 1, "target_count": 10, "max_seen": 40}
+ "contract_wanted": "cdi", "cv_id": 1, "target_count": 10, "max_seen": 40}
 ```
+
+`contract_wanted` vaut `tous` si l'utilisateur a répondu « peu importe ». Le script refuse toute autre valeur que celles listées plus haut.
 
 ## Étape 4 : plateforme
 
@@ -189,11 +192,14 @@ Enregistre ensuite la recherche : écris `tmp/search.json`, puis `node jobsearch
 - HelloWork : `https://www.hellowork.com/fr-fr/emploi/recherche.html?k=<poste>&l=<ville code postal>`
 - Indeed : `https://fr.indeed.com/jobs?q=<poste>&l=<ville (code postal)>`
 
+**Filtre le contrat dès la requête** quand `contract_wanted` ne vaut pas `tous`. C'est ce qui évite de dépenser le plafond de lecture sur des annonces hors sujet. Les deux sites proposent un filtre « Type de contrat » dans la colonne de gauche des résultats : utilise-le en cliquant, c'est plus robuste qu'un paramètre d'URL qui change au gré des refontes. Si le filtre est introuvable, ajoute le terme aux mots-clés (`<poste> CDI`) et signale-le dans les notes de la recherche.
+
 Si l'URL ne donne pas de résultats cohérents (les sites évoluent), passe par la page d'accueil et remplis le formulaire de recherche. Ferme le bandeau cookies en refusant les cookies optionnels.
 
 **Parcourir la liste.** Fais défiler la page pour charger les résultats, puis traite les annonces dans l'ordre. Ignore les annonces sponsorisées sans rapport avec le poste. Pour chaque annonce :
 
 1. Récupère son URL et lance `node jobsearch.js has-url "<url>"`. Si `known` vaut `true`, passe à la suivante (déjà traitée lors d'une recherche précédente). C'est ce qui garantit l'absence de doublon d'une recherche à l'autre : fais-le **avant** d'ouvrir l'annonce, pas après.
+   Si `contract_wanted` est précis et que le contrat affiché sur la liste ne correspond pas, passe aussi sans ouvrir. Compte l'annonce comme lue et retiens le motif pour le récapitulatif.
 2. Clique sur l'annonce. Selon le site, elle s'ouvre dans la même page, dans un panneau latéral ou dans un nouvel onglet (`browser_tabs` pour t'y placer, puis ferme-le après lecture). Si le clic ne marche pas, navigue directement vers l'URL.
 3. Déplie tout le contenu : clique sur chaque bouton "Voir plus", "Lire la suite", "Afficher plus", "Voir la description complète" dans la zone de l'annonce.
 4. Lis l'annonce en entier. Préfère `browser_evaluate` avec `() => (document.querySelector('main') || document.body).innerText` aux captures d'écran : c'est complet et bien moins coûteux. Si le texte semble tronqué, fais un `browser_snapshot`.
@@ -221,6 +227,8 @@ Applique toujours la même grille pour que les scores soient comparables d'une o
 | Adéquation au poste recherché | 20 | L'intitulé et les missions correspondent à ce que l'utilisateur a demandé |
 | Lieu | 10 | Distance à la ville demandée, télétravail |
 | Conditions | 10 | Contrat, salaire, diplôme ou habilitation exigés |
+
+**Contrat demandé.** Si `contract_wanted` vaut `tous`, ce critère ne joue pas. Sinon, une offre dont le contrat ne correspond pas est **écartée**, quel que soit son score : c'est un refus net, pas une pénalité diluée dans les 10 points de Conditions. Deux exceptions à traiter en le disant : une annonce qui propose plusieurs contrats dont celui demandé correspond ; une annonce qui ne précise aucun contrat se note normalement, en portant le doute dans `gaps`.
 
 **Seuil d'enregistrement :** score total supérieur ou égal à 50 **et** au moins 15/40 en compétences. Une offre sous le seuil n'est pas enregistrée, mais compte-la dans les annonces lues et garde en tête son intitulé et la raison du rejet pour le récapitulatif.
 
@@ -303,7 +311,7 @@ Le watcher armé à l'étape 1.6 émet une ligne JSON par bouton cliqué, du typ
 | `scan-cv` | `node jobsearch.js scan-cv` puis l'étape 2 |
 | `analyze-cv` | Lis le PDF du `cv_id` (ou du `filename` si `cv_id` est nul, cas d'un PDF jamais importé), `save-cv`, résume le profil |
 | `audit-cv` | L'audit ATS du CV indiqué, décrit dans la section ci-dessous |
-| `new-search` | `start-search` avec le payload **tel quel** : le formulaire a déjà posé les quatre questions de l'étape 3, ne les repose pas. Puis les étapes 4 à 6 |
+| `new-search` | `start-search` avec le payload **tel quel** : le formulaire a déjà posé les questions de l'étape 3, contrat compris, ne les repose pas. Puis les étapes 4 à 6 |
 | `letter` | L'étape 7 pour l'`offer_id` indiqué |
 | `letters-missing` | L'étape 7 pour chaque offre au statut `a_postuler` sans lettre, par score décroissant. Annonce combien tu vas en écrire avant de commencer |
 | `message` | L'utilisateur t'écrit depuis l'onglet Chat. Réponds avec `say`, voir ci-dessous |
@@ -480,7 +488,7 @@ Toutes renvoient du JSON. En cas d'erreur : code de sortie 1 et `{"ok": false, "
 | `save-audit --file f` | Enregistre le résultat d'un audit ATS (note sur 20, grille, bloquants) |
 | `list-audits [--cv id]` | Relit les audits enregistrés, du plus récent au plus ancien |
 | `set-active-cv <id\|fichier>` | Choisit le CV de référence pour la suite |
-| `start-search --file f` | Ouvre une recherche (`site`, `cv_id`, `target_count`, `max_seen`) |
+| `start-search --file f` | Ouvre une recherche (`site`, `cv_id`, `target_count`, `max_seen`, `contract_wanted`) |
 | `update-search --file f` | Point d'étape : renvoie `budget_restant` et `offres_restantes` |
 | `finish-search --file f` | Clôt la recherche avec les statistiques par site |
 | `has-url <url>` | L'offre est-elle déjà en base ? À lancer avant d'ouvrir chaque annonce |

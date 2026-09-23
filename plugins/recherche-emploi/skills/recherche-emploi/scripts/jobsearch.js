@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.9.0';
+const VERSION = '2.10.0';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -15,13 +15,16 @@ const DATA_DIR = path.join(ROOT, 'data');
 const VENDOR_DIR = path.join(ROOT, 'vendor');
 const DB_PATH = path.join(DATA_DIR, 'jobsearch.db');
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 const RECOS = ['postuler', 'a_etudier', 'ne_pas_postuler'];
 const KANBAN = ['a_postuler', 'postulee', 'entretien', 'refus', 'accepte'];
 const APPLIED = ['postulee', 'entretien', 'refus', 'accepte'];
 const STATUSES = KANBAN.concat(['ecartee']);
 const STATUS_ALIAS = { nouvelle: 'a_postuler' };
 const SITES = ['hellowork', 'indeed', 'les_deux'];
+// Types de contrat proposes a la recherche. 'tous' = pas de filtre, et c'est
+// le defaut : mieux vaut ne rien filtrer que filtrer a l'envers.
+const CONTRATS = ['tous', 'cdi', 'cdd', 'alternance', 'stage', 'interim', 'temps_partiel'];
 // Actions declenchables par un bouton du dashboard. Le watcher les emet sur
 // stdout, l'outil Monitor de Claude Code transforme chaque ligne en notification.
 const ACTIONS = ['check-deps', 'scan-cv', 'analyze-cv', 'audit-cv', 'new-search', 'letter', 'letters-missing', 'message', 'answer'];
@@ -72,7 +75,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_cv_active ON cv(is_active) WHERE is_active
 CREATE TABLE IF NOT EXISTS searches (
   id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, location TEXT NOT NULL, site TEXT NOT NULL,
   target_count INTEGER, offers_seen INTEGER DEFAULT 0, started_at TEXT NOT NULL, finished_at TEXT, notes TEXT,
-  cv_id INTEGER REFERENCES cv(id) ON DELETE SET NULL, stats_json TEXT, max_seen INTEGER);
+  cv_id INTEGER REFERENCES cv(id) ON DELETE SET NULL, stats_json TEXT, max_seen INTEGER,
+  contract_wanted TEXT);                 -- voir migration 9
 CREATE TABLE IF NOT EXISTS offers (
   id INTEGER PRIMARY KEY AUTOINCREMENT, search_id INTEGER REFERENCES searches(id), site TEXT, url TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL, company TEXT, location TEXT, contract TEXT, salary TEXT, remote TEXT, posted_at TEXT,
@@ -237,6 +241,12 @@ const MIGRATIONS = [
     if (!cols.includes('session_id')) db.exec('ALTER TABLE messages ADD COLUMN session_id TEXT');
     db.prepare("UPDATE messages SET session_id = 'sessions-precedentes' WHERE session_id IS NULL").run();
     db.exec('CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)');
+  } },
+  { v: 9, name: 'type de contrat recherche', up(db) {
+    // Une colonne neuve, laissee a NULL sur les recherches passees : elles ont
+    // ete menees sans filtre de contrat, autant que ca se voie.
+    const cols = db.prepare('PRAGMA table_info(searches)').all().map((c) => c.name);
+    if (!cols.includes('contract_wanted')) db.exec('ALTER TABLE searches ADD COLUMN contract_wanted TEXT');
   } },
 ];
 
@@ -685,11 +695,13 @@ const commands = {
     const maxSeen = d.max_seen ? Number(d.max_seen) : (target ? target * 4 : 40);
     if (!(maxSeen > 0)) fail('max_seen doit etre un entier positif');
     if (target && maxSeen < target) fail('max_seen (' + maxSeen + ') est inferieur a target_count (' + target + ') : impossible d\'enregistrer plus d\'offres que d\'annonces lues');
+    const contrat = String(d.contract_wanted || 'tous').trim().toLowerCase();
+    if (!CONTRATS.includes(contrat)) fail('contract_wanted doit valoir : ' + CONTRATS.join(' | '));
     const cv = findCv(db, d.cv_id);
-    const r = db.prepare('INSERT INTO searches (title, location, site, target_count, max_seen, cv_id, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(d.title, d.location, d.site, target, maxSeen, cv ? cv.id : null, now());
+    const r = db.prepare('INSERT INTO searches (title, location, site, target_count, max_seen, cv_id, started_at, contract_wanted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(d.title, d.location, d.site, target, maxSeen, cv ? cv.id : null, now(), contrat);
     out({ ok: true, search_id: Number(r.lastInsertRowid), target_count: target, max_seen: maxSeen,
-      cv_id: cv ? cv.id : null, cv_filename: cv ? cv.filename : null });
+      contract_wanted: contrat, cv_id: cv ? cv.id : null, cv_filename: cv ? cv.filename : null });
   },
 
   'update-search'(args) {
@@ -1561,10 +1573,31 @@ main.anim>*:nth-child(n+4){animation-delay:.12s}
 </script>
 <script>
 var S={offers:[],searches:[],letters:[],cvs:[],cv:null,actions:[],audits:[],messages:[],questions:[],deps:{},version:'',watcher_alive:false,pdfjs:false};
-var tab='offres',filt={q:'',champ:'',reco:'',status:'',min:0,cv:''},kfilt={q:'',champ:'',cv:'',min:0},openId=null,openSearchId=null,cvView=null;
+var tab='offres',filt={q:'',champ:'',reco:'',status:'',min:0,cv:'',contrat:''},kfilt={q:'',champ:'',cv:'',min:0},openId=null,openSearchId=null,cvView=null;
 var dragging=false,resizing=false,lockUntil=0,last='',tabRendu=null;
 var RECO={postuler:'Postuler',a_etudier:'À étudier',ne_pas_postuler:'Ne pas postuler'};
 var SITE={hellowork:'HelloWork',indeed:'Indeed',les_deux:'HelloWork et Indeed'};
+var CONTRAT=[['tous','Tous les contrats'],['cdi','CDI'],['cdd','CDD'],['alternance','Alternance'],
+             ['stage','Stage'],['interim','Interim'],['temps_partiel','Temps partiel']];
+var CONTRAT_NOM={};CONTRAT.forEach(function(x){CONTRAT_NOM[x[0]]=x[1];});
+function nomContrat(v){return v?(CONTRAT_NOM[v]||v):'';}
+// Reconnait le contrat d'une annonce a partir de son texte libre : les sites
+// ecrivent "CDI", "C.D.I.", "Contrat a duree indeterminee", "Alternance"...
+// Aucune contre-oblique dans ce bloc : PAGE est un litteral gabarit, et une
+// classe comme [.\-_] y perdrait son echappement avant d'arriver au navigateur.
+// Le premier passage ne garde que les lettres ; compact recolle les sigles
+// ecrits avec des points ou des espaces, "C.D.I." aussi bien que "C D I".
+function typeContrat(t){
+ var x=String(t||'').toLowerCase().replace(/[^a-zà-öø-ÿ]+/g,' ').trim();
+ var mots=' '+x+' ', compact=x.replace(/ /g,'');
+ if(/altern|apprentis|professionnalisation/.test(x))return 'alternance';
+ if(/stage|stagiaire|internship/.test(x))return 'stage';
+ if(/int[ée]rim|interim|mission temporaire/.test(x))return 'interim';
+ if(/temps partiel|mi temps|part time/.test(x))return 'temps_partiel';
+ if(mots.indexOf(' cdd ')>=0||/dur[ée]ed[ée]termin/.test(compact)||compact.indexOf('cdd')===0)return 'cdd';
+ if(mots.indexOf(' cdi ')>=0||/dur[ée]eind[ée]termin/.test(compact)||compact.indexOf('cdi')===0)return 'cdi';
+ return '';
+}
 function nomSite(v){return SITE[v]||v||'';}
 var STAT={a_postuler:'À postuler',postulee:'Postulée',entretien:'Entretien',refus:'Refus',accepte:'Acceptée',ecartee:'Écartée',nouvelle:'Nouvelle'};
 var KAN=[['a_postuler','À postuler'],['postulee','Postulée'],['entretien','Entretien'],['refus','Refus'],['accepte','Acceptée']];
@@ -1740,8 +1773,9 @@ function searchForm(){
  }
  majPlaf();
  var site=sel([['hellowork','HelloWork (recommande)'],['indeed','Indeed'],['les_deux','Les deux, HelloWork puis Indeed']],lastS.site||'hellowork',function(){});
- [['Poste recherche',poste],['Ou (ville + code postal)',ville],['Objectif : offres a enregistrer',obj],
-  ['Plafond : annonces a lire au maximum',plaf],['Site',site]].forEach(function(x){
+ var contrat=sel(CONTRAT,lastS.contract_wanted||'tous',function(){});
+ [['Poste recherche',poste],['Ou (ville + code postal)',ville],['Type de contrat',contrat],
+  ['Objectif : offres a enregistrer',obj],['Plafond : annonces a lire au maximum',plaf],['Site',site]].forEach(function(x){
    box.appendChild(h('label',{text:x[0]}));box.appendChild(x[1]);});
  var err=h('div',{class:'err'});
  box.appendChild(err);
@@ -1752,6 +1786,7 @@ function searchForm(){
    if(!ville.value.trim()){err.textContent='Indique la ville et le code postal.';return;}
    if(Number(plaf.value)<Number(obj.value)){err.textContent='Le plafond ('+plaf.value+') doit etre au moins egal a l\\'objectif ('+obj.value+').';return;}
    queue('new-search',{title:poste.value.trim(),location:ville.value.trim(),site:site.value,
+    contract_wanted:contrat.value,
     target_count:Number(obj.value),max_seen:Number(plaf.value),cv_id:cv?cv.id:null},
     'Recherche '+poste.value.trim());
    document.body.classList.remove('modal-open');
@@ -1987,6 +2022,7 @@ function vOffres(m){
   sel(CHAMPS,filt.champ,function(v){filt.champ=v;q.setAttribute('placeholder',CHAMP_PH[v]);body();}),q,
   sel([['','Tous les avis']].concat(Object.keys(RECO).map(function(k){return [k,RECO[k]];})),filt.reco,function(v){filt.reco=v;body();}),
   sel([['','Tous les statuts']].concat(KAN.concat([['ecartee','Écartée']])),filt.status,function(v){filt.status=v;body();}),
+  sel([['','Tous les contrats']].concat(CONTRAT.slice(1)),filt.contrat,function(v){filt.contrat=v;body();}),
   sel([['0','Score mini'],['50','50 %'],['60','60 %'],['70','70 %'],['80','80 %']],String(filt.min),function(v){filt.min=Number(v);body();}));
  if(multi)bar.appendChild(sel(cvOpts(),filt.cv,function(v){filt.cv=v;body();}));
  m.appendChild(bar);
@@ -2002,6 +2038,7 @@ function vOffres(m){
   var rows=S.offers.filter(function(o){
    return matchTxt(o,filt.q,filt.champ)
     &&(!filt.reco||o.recommendation===filt.reco)&&(!filt.status||o.status===filt.status)
+    &&(!filt.contrat||typeContrat(o.contract)===filt.contrat)
     &&(!filt.cv||String(o.cv_id)===filt.cv)&&o.match_score>=filt.min;});
   if(!rows.length){tb.appendChild(h('tr',{},h('td',{colspan:String(heads.length),class:'empty',text:'Aucune offre pour le moment.'})));return;}
   rows.forEach(function(o){
@@ -2155,7 +2192,7 @@ function pOffer(b){
 function vHist(m){
  if(!S.searches.length){m.appendChild(h('div',{class:'empty',text:'Aucune recherche lancée.'}));return;}
  var tb=h('tbody'),head=h('tr');
- ['Date','Poste recherché','Lieu','Site','CV','Objectif','Annonces lues','Offres retenues','État'].forEach(function(t){head.appendChild(h('th',{text:t}));});
+ ['Date','Poste recherché','Lieu','Contrat','Site','CV','Objectif','Annonces lues','Offres retenues','État'].forEach(function(t){head.appendChild(h('th',{text:t}));});
  S.searches.forEach(function(s){
   // "plafond atteint" = arret subi : on a lu tout le budget sans remplir l'objectif.
   var seen=s.offers_seen||0;
@@ -2163,12 +2200,14 @@ function vHist(m){
   var lues=h('td',{},h('span',{text:String(seen)+(s.max_seen!=null?' / '+s.max_seen:'')}),
    capped?h('div',{class:'mut',style:'font-size:12px',text:'plafond atteint'}):null);
   tb.appendChild(h('tr',{class:openSearchId===s.id?'on':'',onclick:function(){openSearchId=s.id;render();}},
-   h('td',{class:'nw',text:d(s.started_at)}),h('td',{class:'cut',title:s.title,text:s.title}),h('td',{class:'cut',title:s.location,text:s.location}),h('td',{class:'nw',text:nomSite(s.site)}),
+   h('td',{class:'nw',text:d(s.started_at)}),h('td',{class:'cut',title:s.title,text:s.title}),h('td',{class:'cut',title:s.location,text:s.location}),
+   h('td',{class:'nw mut',text:s.contract_wanted&&s.contract_wanted!=='tous'?nomContrat(s.contract_wanted):'tous'}),
+   h('td',{class:'nw',text:nomSite(s.site)}),
    h('td',{class:'mut cut',title:s.cv_filename||'',text:s.cv_filename||''}),h('td',{text:String(s.target_count||'')}),lues,
    h('td',{text:String(s.offers_saved)}),h('td',{text:s.finished_at?'Terminée':'En cours'})));});
  var tblH=h('table',{},h('thead',{},head),tb);
  m.appendChild(h('div',{class:'wrap'},tblH));
- colonnesReglables(tblH,'historique',[112,220,150,140,190,92,120,124,104]);
+ colonnesReglables(tblH,'historique2',[112,206,140,116,134,170,88,118,120,100]);
 }
 function pSearch(b){
  if(openSearchId==null)return false;
@@ -2177,7 +2216,9 @@ function pSearch(b){
  var head=h('div',{class:'panel-head'});
  head.appendChild(closeX(function(){openSearchId=null;render();}));
  head.appendChild(h('h2',{style:'padding-right:32px',text:'Recherche #'+s.id}));
- head.appendChild(h('div',{class:'mut',text:[s.title,s.location,nomSite(s.site)].filter(Boolean).join(' · ')}));
+ head.appendChild(h('div',{class:'mut',text:[s.title,s.location,
+  s.contract_wanted&&s.contract_wanted!=='tous'?nomContrat(s.contract_wanted):null,
+  nomSite(s.site)].filter(Boolean).join(' · ')}));
  b.appendChild(head);
  var seen=s.offers_seen||0;
  [['Lancée le',d(s.started_at)],['Terminée le',s.finished_at?d(s.finished_at):'en cours'],
