@@ -24,11 +24,21 @@ Les deux se complètent : auditez votre CV d'abord, les mots-clés manquants dev
 | --- | --- | --- |
 | **Claude Code** | c'est lui qui fait tourner les skills | `claude --version` dans un terminal |
 | **Un abonnement Claude** | Pro ou Max, pour faire tourner les sessions | - |
-| **Node.js 22.13 ou plus** | le script utilise la base SQLite intégrée à Node, disponible seulement à partir de cette version | `node --version` |
+| **Node.js 22.13 ou plus** | le script utilise la base SQLite intégrée à Node, disponible seulement à partir de cette version | `node --version`, voir en dessous |
 | **Google Chrome** | le navigateur piloté pendant la recherche | - |
 | **Playwright MCP** | ce qui permet à Claude d'ouvrir Chrome et de lire les annonces | voir juste en dessous |
 | **Le skill `humanizer`** | pour que les lettres de motivation ne sonnent pas comme une IA | `npx skills add blader/humanizer --global`, voir en dessous |
 | **Le skill `audit-cv-ats`** | l'audit de CV, appelable depuis le dashboard | livré dans ce dépôt |
+
+**Si Node manque ou est trop vieux**, Claude vous le dira au démarrage et vous proposera de l'installer. Il ne le fera pas sans votre accord : installer un runtime remplace la version déjà présente sur la machine, ce qui peut gêner d'autres projets. La commande, si vous préférez la lancer vous-même :
+
+```bash
+winget install OpenJS.NodeJS.LTS   # Windows
+brew install node                  # macOS
+sudo dnf install -y nodejs         # Fedora
+```
+
+Sur Debian et Ubuntu, passez par [NodeSource](https://github.com/nodesource/distributions) : la version d'`apt` est souvent trop ancienne. Dans tous les cas, ouvrez un nouveau terminal ensuite, sinon `node` reste introuvable. Si vous jonglez déjà entre plusieurs versions de Node, utilisez [nvm](https://github.com/nvm-sh/nvm) ou [fnm](https://github.com/Schniz/fnm) plutôt que d'écraser votre installation.
 
 **Installer Playwright MCP**, une ligne à taper dans un terminal, puis relancer Claude Code :
 

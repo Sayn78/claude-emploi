@@ -43,7 +43,24 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
 ## Étape 1 : pré-requis et installation
 
-1. **Node** : `node --version` doit renvoyer 22.13 ou plus. Sinon, arrête-toi et demande à l'utilisateur de mettre Node à jour (version LTS actuelle).
+1. **Node** : `node --version` doit renvoyer 22.13 ou plus, c'est la version qui apporte `node:sqlite`.
+
+   S'il est absent ou trop ancien, ne te contente pas de le signaler et ne l'installe pas non plus de ta propre initiative : installer un runtime touche toute la machine et peut casser d'autres projets épinglés sur une autre version. Propose, et laisse l'utilisateur trancher.
+
+   Ici le dashboard n'existe pas encore, donc la question passe par `AskUserQuestion` : « Node 22.13 ou plus est nécessaire. Je l'installe ? » avec **Installe-le** et **Je m'en occupe**.
+
+   S'il accepte, lance la commande de son système, puis revérifie `node --version` :
+
+   | Système | Commande |
+   | --- | --- |
+   | Windows | `winget install OpenJS.NodeJS.LTS` |
+   | macOS | `brew install node` |
+   | Debian, Ubuntu | `curl -fsSL https://deb.nodesource.com/setup_lts.x \| sudo -E bash - && sudo apt-get install -y nodejs` |
+   | Fedora | `sudo dnf install -y nodejs` |
+
+   Trois choses à dire au passage plutôt qu'à laisser découvrir : l'installation peut demander une élévation de privilèges, elle remplace la version de Node déjà présente, et il faut **ouvrir un nouveau terminal** pour que `node` soit trouvé. Si l'utilisateur jongle déjà entre plusieurs versions de Node, oriente-le vers `nvm` ou `fnm` au lieu d'écraser son installation.
+
+   S'il préfère s'en occuper, donne-lui https://nodejs.org (version LTS) et arrête-toi là : rien ne peut fonctionner sans Node.
 
 2. **Script** : copie tout le dossier `scripts/` du skill vers le dossier de travail si la version diffère. Le dossier de ce skill t'est indiqué au chargement ; remplace les deux chemins. La copie est récursive : elle emporte `jobsearch.js` **et** `vendor/`, sans quoi l'onglet CV du dashboard ne peut pas afficher les PDF.
 
