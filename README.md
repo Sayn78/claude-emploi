@@ -27,7 +27,7 @@ Les deux se complètent : auditez votre CV d'abord, les mots-clés manquants dev
 | **Node.js 22.13 ou plus** | le script utilise la base SQLite intégrée à Node, disponible seulement à partir de cette version | `node --version` |
 | **Google Chrome** | le navigateur piloté pendant la recherche | - |
 | **Playwright MCP** | ce qui permet à Claude d'ouvrir Chrome et de lire les annonces | voir juste en dessous |
-| **Le skill `humanizer`** | pour que les lettres de motivation ne sonnent pas comme une IA | `git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer` |
+| **Le skill `humanizer`** | pour que les lettres de motivation ne sonnent pas comme une IA | `npx skills add blader/humanizer --global`, voir en dessous |
 | **Le skill `audit-cv-ats`** | l'audit de CV, appelable depuis le dashboard | livré dans ce dépôt |
 
 **Installer Playwright MCP**, une ligne à taper dans un terminal, puis relancer Claude Code :
@@ -42,6 +42,23 @@ claude mcp add playwright -- cmd /c npx @playwright/mcp@latest --browser chrome
 
 Le navigateur reste visible pendant la recherche, c'est voulu : vous voyez ce qui se passe et vous pouvez intervenir.
 
+**Installer le skill `humanizer`**, au choix, d'après [son dépôt](https://github.com/blader/humanizer) :
+
+```bash
+npx skills add blader/humanizer --global          # méthode recommandée par l'auteur
+```
+
+```text
+/plugin marketplace add blader/humanizer          # ou en plugin, Claude Code 2.1.142 ou plus
+/plugin install humanizer@humanizer
+```
+
+```bash
+git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer   # ou à la main
+```
+
+Les trois marchent. Le `SKILL.md` du dépôt est à sa racine, donc le clone direct suffit, et la vérification de dépendances du dashboard reconnaît les trois emplacements.
+
 **Si `humanizer` manque**, les lettres se rédigent quand même, Claude applique les règles d'écriture à la main. **Si `audit-cv-ats` manque**, seul le bouton d'audit du dashboard est inactif, le reste fonctionne. Aucun des deux n'est bloquant.
 
 ---
@@ -52,13 +69,21 @@ Le navigateur reste visible pendant la recherche, c'est voulu : vous voyez ce qu
 
 Dans Claude Code, trois commandes :
 
-```
+```text
 /plugin marketplace add Sayn78/claude-emploi
 /plugin install recherche-emploi@claude-emploi
 /plugin install audit-cv-ats@claude-emploi
 ```
 
 La première ajoute ce dépôt à votre liste de sources. Les deux suivantes installent les skills. Les mises à jour se récupèrent ensuite avec `/plugin marketplace update claude-emploi`.
+
+Si les commandes `/plugin` ne sont pas disponibles chez vous - c'est le cas de l'extension VS Code - les mêmes opérations passent par le terminal :
+
+```bash
+claude plugin marketplace add Sayn78/claude-emploi
+claude plugin install recherche-emploi@claude-emploi
+claude plugin install audit-cv-ats@claude-emploi
+```
 
 ### À la main
 

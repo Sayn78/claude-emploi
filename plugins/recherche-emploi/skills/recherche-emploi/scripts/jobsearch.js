@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.6.2';
+const VERSION = '2.6.3';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -369,35 +369,65 @@ function chromeInfo() {
   return { found: false };
 }
 
-// Les dossiers ou Claude Code va chercher ses skills : le dossier personnel,
-// les dossiers de plugins, et un .claude/skills dans le projet ou ses parents.
-function skillRoots() {
+// Recense les SKILL.md installes. Trois dispositions coexistent et il faut les
+// couvrir toutes : le dossier personnel, un plugin qui declare skills:["./"]
+// (SKILL.md a sa racine, cas de humanizer), et un plugin avec un sous-dossier
+// skills/. On lit le nom declare dans l'entete plutot que de se fier au nom du
+// dossier, qui ne correspond pas toujours.
+let SKILLS_CACHE = { at: 0, list: null };
+const SKILLS_TTL_MS = 30000;
+
+function skillDirs() {
   const home = os.homedir();
-  const roots = [path.join(home, '.claude', 'skills')];
-  const dirs = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return []; } };
-  // ~/.claude/plugins/marketplaces/<marketplace>/{plugins,external_plugins}/<plugin>/skills
-  const mk = path.join(home, '.claude', 'plugins', 'marketplaces');
-  for (const m of dirs(mk)) {
+  const out = [];
+  // pas de filtre isDirectory : un skill peut etre un lien de jonction, que
+  // readdir signale comme lien et non comme dossier. On exclut juste les fichiers.
+  const sub = (p) => { try { return fs.readdirSync(p, { withFileTypes: true }).filter((e) => !e.isFile()).map((e) => path.join(p, e.name)); } catch { return []; } };
+
+  for (const d of sub(path.join(home, '.claude', 'skills'))) out.push(d);
+
+  for (const mk of sub(path.join(home, '.claude', 'plugins', 'marketplaces'))) {
+    out.push(mk);                                   // plugin a la racine du depot
     for (const bucket of ['plugins', 'external_plugins']) {
-      const b = path.join(mk, m, bucket);
-      for (const p of dirs(b)) roots.push(path.join(b, p, 'skills'));
+      for (const p of sub(path.join(mk, bucket))) {
+        out.push(p);                                // plugin avec SKILL.md a sa racine
+        for (const s of sub(path.join(p, 'skills'))) out.push(s);
+      }
     }
   }
+
   let dir = ROOT;
   for (let i = 0; i < 4; i++) {
-    roots.push(path.join(dir, '.claude', 'skills'));
+    for (const d of sub(path.join(dir, '.claude', 'skills'))) out.push(d);
     const up = path.dirname(dir);
     if (up === dir) break;
     dir = up;
   }
-  return roots;
+  return out;
 }
+function skillsInstalled() {
+  if (SKILLS_CACHE.list && Date.now() - SKILLS_CACHE.at < SKILLS_TTL_MS) return SKILLS_CACHE.list;
+  const list = [];
+  for (const dir of skillDirs()) {
+    const f = path.join(dir, 'SKILL.md');
+    let head;
+    try { head = fs.readFileSync(f, 'utf8').slice(0, 600); } catch { continue; }
+    const m = head.match(/^\s*---\s*[\r\n]+[\s\S]*?^name:\s*([^\r\n]+)/m);
+    const declared = m ? m[1].trim().replace(/^["']|["']$/g, '') : null;
+    list.push({ dir, folder: path.basename(dir), name: declared || path.basename(dir) });
+  }
+  SKILLS_CACHE = { at: Date.now(), list };
+  return list;
+}
+// L'ordre de names fait foi : le premier nom est le skill prefere, les suivants
+// sont des equivalents acceptes. On ne rend pas un equivalent quand le prefere
+// est installe, sinon le detail affiche affole plus qu'il n'informe.
 function skillInfo(names) {
-  for (const root of skillRoots()) {
-    for (const n of names) {
-      const dir = path.join(root, n);
-      if (fs.existsSync(path.join(dir, 'SKILL.md'))) return { found: true, name: n, path: dir };
-    }
+  const list = skillsInstalled();
+  for (const n of names) {
+    const w = n.toLowerCase();
+    const hit = list.find((s) => String(s.name).toLowerCase() === w || s.folder.toLowerCase() === w);
+    if (hit) return { found: true, name: hit.name, path: hit.dir };
   }
   return { found: false };
 }
