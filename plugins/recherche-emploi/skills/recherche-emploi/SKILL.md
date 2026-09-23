@@ -76,7 +76,11 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
    node -e "fetch('http://127.0.0.1:3000/api/shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:'{\"confirm\":\"stop\"}'}).then(()=>console.log('ancien dashboard arrete')).catch(()=>console.log('aucun dashboard a arreter'))"
    ```
 
-3. **Playwright** : vérifie que les outils `mcp__playwright__browser_*` sont disponibles. Installé par plugin, le serveur vient avec le skill et il n'y a rien à faire ; s'il manque quand même, c'est que la session n'a pas été relancée depuis l'installation. Pour une installation manuelle du skill, donne la commande puis demande de relancer Claude Code :
+3. **Playwright** : cherche dans ta liste d'outils un nom qui **se termine par** `__browser_navigate`. Le préfixe dépend du mode d'installation et les deux sont normaux :
+   - `mcp__plugin_recherche-emploi_playwright__` quand le skill est installé par plugin, Claude Code préfixant les serveurs MCP d'un plugin
+   - `mcp__playwright__` quand le serveur a été ajouté à la main
+
+   Retiens celui que tu as trouvé et utilise-le pour **tous** tes appels navigateur ensuite. Dans la suite de ce document les outils sont écrits `mcp__playwright__browser_*` par commodité : lis-les comme `<ton préfixe>browser_*`. Si aucun des deux ne répond, le serveur manque vraiment. Installé par plugin, cela veut dire que la session n'a pas été relancée depuis l'installation. Pour une installation manuelle du skill, donne la commande puis demande de relancer Claude Code :
    - macOS / Linux / WSL : `claude mcp add playwright -- npx @playwright/mcp@latest --browser chrome`
    - Windows natif : `claude mcp add playwright -- cmd /c npx @playwright/mcp@latest --browser chrome`
 
@@ -379,14 +383,14 @@ Si le skill `audit-cv-ats` n'est pas installé, dis-le clairement dans le `resul
 Le serveur calcule tout seul Node, le script, la base, PDF.js, le dossier `cv/`, le watcher, la présence de Google Chrome, l'état du profil navigateur et les deux skills dont dépend le parcours (`humanizer` pour les lettres, `audit-cv-ats` pour l'audit) : il les cherche sur le disque, dans le dossier personnel, les plugins et le projet. Trois cases dépendent de toi. Écris `tmp/dep.json` puis `node jobsearch.js set-dep --file tmp/dep.json` :
 
 ```json
-{"name": "playwright", "status": "ok", "detail": "outils mcp__playwright__browser_* disponibles"}
+{"name": "playwright", "status": "ok", "detail": "outils browser_* disponibles (prefixe mcp__plugin_recherche-emploi_playwright__)"}
 ```
 
 `status` vaut `ok`, `ko` ou `unknown`. Tant que tu n'as pas répondu, la case reste grise.
 
 | `name` | Comment tu le vérifies |
 | --- | --- |
-| `playwright` | Les outils `mcp__playwright__browser_*` sont-ils dans ta liste d'outils ? |
+| `playwright` | Un outil dont le nom finit par `__browser_navigate` est-il dans ta liste ? Peu importe le préfixe, voir l'étape 3 du démarrage. Mets le préfixe trouvé dans `detail` |
 | `hellowork` | Ouvre `https://www.hellowork.com/fr-fr/emploi/recherche.html?k=test&l=Paris` avec Playwright |
 | `indeed` | Ouvre `https://fr.indeed.com/jobs?q=test&l=Paris` avec Playwright |
 

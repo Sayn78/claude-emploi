@@ -1,7 +1,7 @@
 {
   "name": "recherche-emploi",
   "description": "Assistant de recherche d'emploi en local : cherche sur HelloWork et Indeed avec Playwright, note chaque offre face au CV, dashboard sur localhost avec kanban de suivi et redaction de lettres de motivation.",
-  "version": "2.10.0",
+  "version": "2.10.1",
   "author": { "name": "sayn78", "url": "https://github.com/Sayn78" },
   "homepage": "https://github.com/Sayn78/claude-emploi",
   "license": "MIT",

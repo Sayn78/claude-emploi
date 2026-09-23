@@ -10,6 +10,16 @@ Les numéros suivent [semver](https://semver.org/lang/fr/) : le chiffre du milie
 
 ## recherche-emploi
 
+### 2.10.1 - 2026-09-23
+
+Corrige la détection de Playwright quand le skill est installé par plugin.
+
+Claude Code préfixe les serveurs MCP livrés par un plugin. Les outils ne s'appellent donc pas `mcp__playwright__browser_*` mais `mcp__plugin_recherche-emploi_playwright__browser_*`. Le skill testait le premier nom : il concluait que Playwright manquait, affichait la commande d'installation manuelle et passait la case du dashboard au rouge, alors que le serveur tournait et répondait.
+
+Le bug est là depuis la 2.10.0. Il touchait uniquement les installations par plugin sans Playwright déjà ajouté à la main, c'est-à-dire la configuration que la 2.10.0 venait justement rendre possible. Une machine qui avait gardé son serveur `playwright` d'une installation manuelle ne voyait rien.
+
+Le skill cherche maintenant un outil dont le nom se termine par `__browser_navigate` et réutilise le préfixe trouvé, quel qu'il soit. Les deux modes d'installation fonctionnent.
+
 ### 2.10.0 - 2026-09-23
 
 Le type de contrat devient un vrai paramètre de recherche.
