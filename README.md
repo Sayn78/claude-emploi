@@ -128,9 +128,11 @@ Deux étapes, l'une ne remplace pas l'autre. La première rafraîchit le catalog
 puis, dans un terminal :
 
 ```bash
-claude plugin update recherche-emploi
-claude plugin update audit-cv-ats
+claude plugin update recherche-emploi@claude-emploi
+claude plugin update audit-cv-ats@claude-emploi
 ```
+
+Le `@claude-emploi` n'est pas décoratif : c'est le nom du marketplace d'où vient le plugin, et sans lui la commande répond `Plugin "recherche-emploi" not found`. `claude plugin list` affiche les noms complets, à recopier tels quels.
 
 **Relancez Claude Code ensuite.** Le plugin déclare un serveur MCP, et un serveur MCP ne se recharge pas toujours proprement sans redémarrage. `/reload-plugins` suffit pour le reste.
 
