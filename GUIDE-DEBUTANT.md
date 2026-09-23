@@ -83,8 +83,12 @@ Dans Claude Code, ouvrez ce dossier : l'application vous demande sur quel dossie
 Tapez :
 
 ```text
-/recherche-emploi
+/recherche-emploi:recherche-emploi
 ```
+
+Le nom est écrit deux fois, ce n'est pas une faute : Claude Code fait précéder chaque skill du nom du plugin qui le livre, et ici les deux s'appellent pareil. Tapez `/rech`, la liste vous proposera la bonne commande, vous n'aurez qu'à valider.
+
+Et si ça vous embête, **dites-le simplement** : « lance ma recherche d'emploi » marche aussi bien.
 
 Claude prend la main. Il vérifie que tout est en place, crée ce dont il a besoin et ouvre une page dans votre navigateur, à l'adresse `localhost:3000`. C'est votre tableau de bord.
 
@@ -108,7 +112,7 @@ Le tableau de bord a un bouton **Vérifier les dépendances**. Il affiche une ca
 | Case **Playwright MCP** rouge | Fermez et rouvrez Claude Code. Le serveur est livré avec le skill, mais il n'apparaît qu'au redémarrage |
 | Case **Google Chrome** rouge | Refaites l'étape 4 |
 | Case **Dossier cv/** rouge | Il manque votre CV en PDF dans le dossier `cv` |
-| Case **Watcher** rouge | Votre session Claude Code s'est arrêtée. Relancez `/recherche-emploi` |
+| Case **Watcher** rouge | Votre session Claude Code s'est arrêtée. Relancez `/recherche-emploi:recherche-emploi` |
 | Case **Skill humanizer** rouge | Facultatif. Les lettres se feront quand même, un peu moins naturelles |
 | **Claude hors ligne** en haut de la page | Même chose : la session est fermée, relancez le skill |
 | Une page qui demande « Êtes-vous un humain ? » | Résolvez-la vous-même dans la fenêtre du navigateur, puis dites à Claude de reprendre. Il ne la contournera jamais tout seul |
@@ -123,7 +127,7 @@ L'outil ne cherche pas à votre place, il vous fait gagner les heures que vous p
 
 ### D'abord, faites auditer votre CV
 
-Avant toute recherche, tapez `/audit-cv-ats` ou dites simplement « analyse mon CV ».
+Avant toute recherche, tapez `/audit-cv-ats:audit-cv-ats` ou dites simplement « analyse mon CV ».
 
 Vous obtenez une note sur 20 et, surtout, la liste des mots-clés que les recruteurs emploient dans les annonces de votre métier et qui ne figurent pas sur votre CV. Ces logiciels de tri automatique éliminent une candidature avant qu'un humain la voie ; c'est souvent là que ça bloque quand on n'a aucune réponse.
 

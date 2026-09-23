@@ -155,14 +155,16 @@ Vos données ne risquent rien : la base SQLite, les CV et les lettres vivent dan
 2. Ouvrez Claude Code dans ce dossier et tapez :
 
 ```text
-/recherche-emploi
+/recherche-emploi:recherche-emploi
 ```
 
 C'est tout. Vous n'avez rien à préparer : Claude crée le sous-dossier `cv/`, installe son script, crée la base et ouvre le dashboard sur <http://localhost:3000>. Il vous demande alors de déposer votre CV en PDF dans `cv/`, avec un bouton qui ouvre le dossier pour vous, et il attend que vous confirmiez.
 
 Ses questions s'affichent ensuite dans le chat de la page, avec les réponses en boutons : quel CV utiliser, quel poste et quelle ville chercher, combien d'offres vous voulez garder, combien d'annonces il a le droit de lire au maximum, sur quel site chercher. Vous cliquez, vous ne tapez rien.
 
-Deux variantes selon votre installation. Si vous avez installé par plugin, la commande devient `/recherche-emploi:recherche-emploi`. Et si vous préférez, une phrase suffit aussi : **lance ma recherche d'emploi**, ou **analyse mon CV** pour l'audit ATS.
+**Pourquoi ce nom doublé ?** Claude Code préfixe les skills livrés par un plugin du nom de leur plugin. Ici le plugin et le skill portent tous deux le nom `recherche-emploi`, d'où `/recherche-emploi:recherche-emploi`. Même chose pour `/audit-cv-ats:audit-cv-ats`. Si vous avez installé à la main dans `~/.claude/skills/`, le préfixe disparaît : `/recherche-emploi` suffit.
+
+**Le plus simple reste de parler.** Une phrase déclenche le skill sans aucune commande : **lance ma recherche d'emploi**, ou **analyse mon CV** pour l'audit ATS. C'est valable quelle que soit votre installation, et c'est ce que vous retiendrez.
 
 ---
 
