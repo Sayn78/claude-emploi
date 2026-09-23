@@ -104,6 +104,14 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
    Dis à l'utilisateur que les boutons sont actifs tant que cette session reste ouverte. Le dashboard affiche « Claude écoute » en vert quand le watcher tourne, « Claude hors ligne » en gris sinon, et grise les boutons dans ce cas. Si un `Monitor` est déjà armé dans la session, ne le relance pas.
 
+7. **Sites jamais vérifiés** : `node jobsearch.js deps --pending`. La commande renvoie les seules cases que tu dois encore remplir toi-même, dont `sites`, la liste des sites d'emploi jamais testés.
+
+   **Si `sites` n'est pas vide, teste-les maintenant**, une bonne fois : c'est le seul moment où tu ouvres des pages sans que l'utilisateur l'ait demandé, et ça lui évite de découvrir au milieu d'une recherche qu'un site le bloque. Préviens-le en une ligne avant de commencer (« je vérifie l'accès aux N sites, une trentaine de secondes »), utilise les URL du tableau de vérification plus bas, réponds par `set-dep` pour chacun, et résume en une ligne : les sites accessibles, ceux qui bloquent et pourquoi.
+
+   Une fois répondu, un site sort de `pending` et n'est **plus jamais retesté tout seul** : les lancements suivants passent directement à l'étape 2. Ne refais ce tour que sur demande explicite ou via le bouton « Revérifier les dépendances ».
+
+   Deux garde-fous. Si Playwright est en `ko`, saute complètement ce point et laisse les sites en `unknown` : sans navigateur il n'y a rien à tester. Et si l'utilisateur t'a déjà dit ce qu'il cherchait et sur quels sites, teste seulement ceux-là, les autres attendront.
+
 ## Étape 2 : les CV
 
 Le tableau `cvs` renvoyé par `check` liste un élément par PDF présent dans `cv/`, avec `id`, `filename`, `in_db`, `needs_import`, `is_active`.
@@ -448,7 +456,12 @@ Pour tous ces sites, la question est « puis-je lire des annonces », pas « sui
 - `ko` : captcha, écran Cloudflare, « Vérifiez que vous êtes humain », ou erreur réseau. Mets le motif dans `detail`, c'est l'information utile ;
 - `unknown` : tu n'as pas testé.
 
-Chacun de ces tests ouvre vraiment le navigateur, alors **ne teste que les sites que l'utilisateur compte utiliser** et laisse les autres en `unknown` : sinon un clic sur « Revérifier les dépendances » ouvre cinq pages. Si Playwright est en `ko`, ne les tente pas du tout. Si l'utilisateur vient de lancer une recherche, sers-toi de ce que tu as constaté pendant cette recherche plutôt que de recharger les sites pour rien.
+Chacun de ces tests ouvre vraiment le navigateur. Deux moments seulement les déclenchent :
+
+- **au tout premier lancement**, pour les sites jamais testés, voir le point 7 de l'étape 1 ;
+- **sur demande**, quand l'utilisateur clique « Revérifier les dépendances » ou te le demande. Là il a choisi d'attendre, donc reteste tout ce qui est concerné.
+
+En dehors de ces deux cas, ne recharge jamais un site juste pour remplir une case. Si Playwright est en `ko`, ne les tente pas du tout. Si l'utilisateur vient de lancer une recherche, sers-toi de ce que tu as constaté pendant cette recherche plutôt que de recharger les sites pour rien.
 
 Deux cas à ne pas mal classer :
 
@@ -562,7 +575,8 @@ Toutes renvoient du JSON. En cas d'erreur : code de sortie 1 et `{"ok": false, "
 | `answers [--pending]` | Questions posées et réponses reçues |
 | `cancel-question <id>` | Retire de la page une question restée sans réponse |
 | `list-messages [--limit N] [--all]` | Chat de la session en cours, ou de toutes avec `--all` |
-| `deps` / `set-dep --file f` | État des dépendances / renseigne `playwright` ou l'un des sites (`hellowork`, `indeed`, `france_travail`, `free_work`, `linkedin`) |
+| `deps` / `deps --pending` | État des dépendances / seulement celles que tu dois encore vérifier toi-même |
+| `set-dep --file f` | Renseigne `playwright` ou l'un des sites (`hellowork`, `indeed`, `france_travail`, `free_work`, `linkedin`) |
 | `delete-offer <id>` | Supprime une offre **et ses lettres** |
 | `delete-letter <id>` | Supprime une lettre |
 | `delete-cv <id\|fichier>` | Retire un CV de la base. **Le PDF reste dans `cv/`** |

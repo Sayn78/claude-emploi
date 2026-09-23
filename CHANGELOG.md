@@ -10,6 +10,16 @@ Les numéros suivent [semver](https://semver.org/lang/fr/) : le chiffre du milie
 
 ## recherche-emploi
 
+### 2.12.0 - 2026-09-23
+
+Les sites d'emploi sont vérifiés une fois, au premier lancement.
+
+La 2.11.0 a ajouté France Travail, Free-Work et LinkedIn aux cases de l'onglet Système, mais rien ne les remplissait : elles restaient grises jusqu'à ce que vous cliquiez sur « Revérifier les dépendances ». Et comme la même version demandait de ne tester que les sites qu'on comptait utiliser, un clic sur ce bouton pouvait n'en tester aucun des trois.
+
+- Au premier lancement, Claude teste les sites jamais vérifiés, vous prévient avant et résume ce qui passe et ce qui bloque. Une fois répondu, un site n'est plus jamais retesté tout seul : les lancements suivants enchaînent directement.
+- Nouvelle commande `deps --pending` : la liste des cases que Claude doit encore remplir lui-même. C'est elle qui garantit qu'un site n'est testé qu'une seule fois.
+- Le bouton « Revérifier les dépendances » reste le moyen de tout retester à la demande.
+
 ### 2.11.0 - 2026-09-23
 
 Trois sites de plus, et une recherche peut désormais en viser plusieurs à la fois.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.11.0';
+const VERSION = '2.12.0';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -1036,7 +1036,16 @@ const commands = {
     out({ ok: true, name: d.name, status: d.status });
   },
 
-  deps() { out({ ok: true, deps: depsState(openDb()) }); },
+  // `deps --pending` ne renvoie que ce que Claude doit encore verifier lui-meme.
+  // C'est ce qui permet de ne tester un site qu'une seule fois : une fois
+  // repondu, il sort de la liste et les lancements suivants ne l'ouvrent plus.
+  deps(args) {
+    const d = depsState(openDb());
+    if (!args.includes('--pending')) return out({ ok: true, deps: d });
+    const reste = Object.keys(CLAUDE_DEPS).filter((k) => !d[k] || d[k].status === 'unknown');
+    out({ ok: true, pending: reste, count: reste.length,
+      sites: reste.filter((k) => SITES.includes(k)), playwright: reste.includes('playwright') });
+  },
 
   // Reponse de Claude dans le chat du dashboard. Cloture l'action au passage
   // quand action_id est fourni : un aller-retour au lieu de deux.
