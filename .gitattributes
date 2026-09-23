@@ -1,0 +1,7 @@
+# PDF.js est distribue tel quel : pas de conversion de fins de ligne, les
+# fichiers doivent rester octet pour octet identiques a la version amont.
+**/scripts/vendor/** -text
+
+*.md text
+*.json text
+*.js text

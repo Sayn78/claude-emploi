@@ -1,0 +1,29 @@
+{
+  "name": "claude-emploi",
+  "owner": {
+    "name": "sayn78",
+    "url": "https://github.com/Sayn78"
+  },
+  "description": "Recherche d'emploi et audit de CV pour les ATS, en local avec Claude Code",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "recherche-emploi",
+      "source": "./plugins/recherche-emploi",
+      "description": "Cherche sur HelloWork et Indeed, note les offres face au CV, dashboard local avec kanban de suivi et lettres de motivation",
+      "version": "2.6.2",
+      "author": { "name": "sayn78" },
+      "homepage": "https://github.com/Sayn78/claude-emploi",
+      "license": "MIT"
+    },
+    {
+      "name": "audit-cv-ats",
+      "source": "./plugins/audit-cv-ats",
+      "description": "Audite un CV face aux ATS : note sur 20, mots-cles manquants, version optimisee",
+      "version": "1.0.0",
+      "author": { "name": "sayn78" },
+      "homepage": "https://github.com/Sayn78/claude-emploi",
+      "license": "MIT"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "audit-cv-ats",
+  "description": "Audite un CV face aux ATS (Applicant Tracking Systems) : note sur 20, liste des mots-cles manquants, version optimisee du CV. Fonctionne sur un CV seul ou sur un CV confronte a une offre.",
+  "version": "1.0.0",
+  "author": { "name": "sayn78", "url": "https://github.com/Sayn78" },
+  "homepage": "https://github.com/Sayn78/claude-emploi",
+  "license": "MIT",
+  "keywords": ["cv", "ats", "resume", "recrutement", "mots-cles", "francais"]
+}

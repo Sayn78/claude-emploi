@@ -1,0 +1,17 @@
+# Donnees personnelles : elles vivent dans le dossier de travail, jamais ici.
+# Presentes quand meme, au cas ou quelqu'un travaillerait dans le depot.
+cv/
+data/
+tmp/
+audit-ats/
+*.db
+*.db-wal
+*.db-shm
+*.pdf
+*.docx
+.env
+.env.local
+
+node_modules/
+.DS_Store
+Thumbs.db
