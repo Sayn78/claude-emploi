@@ -425,7 +425,7 @@ Si le skill `audit-cv-ats` n'est pas installé, dis-le clairement dans le `resul
 
 ### Les cases que seul toi peux remplir
 
-Le serveur calcule tout seul Node, le script, la base, PDF.js, le dossier `cv/`, le watcher, la présence de Google Chrome, l'état du profil navigateur et les deux skills dont dépend le parcours (`humanizer` pour les lettres, `audit-cv-ats` pour l'audit) : il les cherche sur le disque, dans le dossier personnel, les plugins et le projet. Trois cases dépendent de toi. Écris `tmp/dep.json` puis `node jobsearch.js set-dep --file tmp/dep.json` :
+Le serveur calcule tout seul Node, le script, la base, PDF.js, le dossier `cv/`, le watcher, la présence de Google Chrome, l'état du profil navigateur et les deux skills dont dépend le parcours (`humanizer` pour les lettres, `audit-cv-ats` pour l'audit) : il les cherche sur le disque, dans le dossier personnel, les plugins et le projet. Six cases dépendent de toi : Playwright et les cinq sites. Écris `tmp/dep.json` puis `node jobsearch.js set-dep --file tmp/dep.json` :
 
 ```json
 {"name": "playwright", "status": "ok", "detail": "outils browser_* disponibles (prefixe mcp__plugin_recherche-emploi_playwright__)"}
