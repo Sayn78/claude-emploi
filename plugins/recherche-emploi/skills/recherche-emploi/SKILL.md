@@ -76,7 +76,7 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
    node -e "fetch('http://127.0.0.1:3000/api/shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:'{\"confirm\":\"stop\"}'}).then(()=>console.log('ancien dashboard arrete')).catch(()=>console.log('aucun dashboard a arreter'))"
    ```
 
-3. **Playwright** : vérifie que les outils `mcp__playwright__browser_*` sont disponibles. Sinon, arrête-toi et donne la commande d'installation, puis demande de relancer Claude Code :
+3. **Playwright** : vérifie que les outils `mcp__playwright__browser_*` sont disponibles. Installé par plugin, le serveur vient avec le skill et il n'y a rien à faire ; s'il manque quand même, c'est que la session n'a pas été relancée depuis l'installation. Pour une installation manuelle du skill, donne la commande puis demande de relancer Claude Code :
    - macOS / Linux / WSL : `claude mcp add playwright -- npx @playwright/mcp@latest --browser chrome`
    - Windows natif : `claude mcp add playwright -- cmd /c npx @playwright/mcp@latest --browser chrome`
 

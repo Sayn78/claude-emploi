@@ -4,6 +4,8 @@ Deux skills Claude Code pour chercher un emploi en France. Le premier parcourt H
 
 Tout tourne sur votre machine. Aucun compte à créer, aucun serveur distant, aucune donnée envoyée ailleurs que dans votre session Claude.
 
+**Jamais installé ce genre d'outil ?** Passez par le [guide pas à pas](GUIDE-DEBUTANT.md), écrit pour quelqu'un qui n'a jamais ouvert un terminal.
+
 > **In English.** Two French-language Claude Code skills for the French job market. `recherche-emploi` searches HelloWork and Indeed with a real browser, scores each posting against your PDF resume, stores results in a local SQLite database and serves a dashboard on `localhost:3000` with a kanban board and cover-letter drafting. `audit-cv-ats` audits a resume against applicant tracking systems and returns a score out of 20, the missing keywords and an optimised version. Everything runs locally; the skills speak French and target French job boards, so they are of limited use elsewhere.
 
 ![Le tableau des offres, avec le detail a droite](docs/captures/01-offres.png)
@@ -28,8 +30,8 @@ Les deux se complètent : auditez votre CV d'abord, les mots-clés manquants dev
 | **Un abonnement Claude** | Pro ou Max, pour faire tourner les sessions | - |
 | **Node.js 22.13 ou plus** | le script utilise la base SQLite intégrée à Node, disponible seulement à partir de cette version | `node --version`, voir en dessous |
 | **Google Chrome** | le navigateur piloté pendant la recherche | - |
-| **Playwright MCP** | ce qui permet à Claude d'ouvrir Chrome et de lire les annonces | voir juste en dessous |
-| **Le skill `humanizer`** | pour que les lettres de motivation ne sonnent pas comme une IA | `npx skills add blader/humanizer --global`, voir en dessous |
+| **Playwright MCP** | ce qui permet à Claude d'ouvrir Chrome et de lire les annonces | livré avec le plugin, rien à faire |
+| **Le skill `humanizer`** | pour que les lettres de motivation ne sonnent pas comme une IA | `/plugin install humanizer@claude-emploi` |
 | **Le skill `audit-cv-ats`** | l'audit de CV, appelable depuis le dashboard | livré dans ce dépôt |
 
 **Si Node manque ou est trop vieux**, Claude vous le dira au démarrage et vous proposera de l'installer. Il ne le fera pas sans votre accord : installer un runtime remplace la version déjà présente sur la machine, ce qui peut gêner d'autres projets. La commande, si vous préférez la lancer vous-même :
@@ -42,7 +44,9 @@ sudo dnf install -y nodejs         # Fedora
 
 Sur Debian et Ubuntu, passez par [NodeSource](https://github.com/nodesource/distributions) : la version d'`apt` est souvent trop ancienne. Dans tous les cas, ouvrez un nouveau terminal ensuite, sinon `node` reste introuvable. Si vous jonglez déjà entre plusieurs versions de Node, utilisez [nvm](https://github.com/nvm-sh/nvm) ou [fnm](https://github.com/Schniz/fnm) plutôt que d'écraser votre installation.
 
-**Installer Playwright MCP**, une ligne à taper dans un terminal, puis relancer Claude Code :
+**Playwright MCP et `humanizer` viennent avec les plugins.** Playwright est déclaré par le plugin `recherche-emploi` : il s'installe et se lance tout seul, il faut seulement relancer Claude Code après l'installation. `humanizer` est relayé par ce marketplace mais reste le projet de [blader](https://github.com/blader/humanizer), installé depuis son dépôt d'origine.
+
+Pour une installation manuelle des skills, sans passer par les plugins, il faut ajouter Playwright soi-même :
 
 ```bash
 # macOS, Linux, WSL
@@ -54,23 +58,6 @@ claude mcp add playwright -- cmd /c npx @playwright/mcp@latest --browser chrome
 
 Le navigateur reste visible pendant la recherche, c'est voulu : vous voyez ce qui se passe et vous pouvez intervenir.
 
-**Installer le skill `humanizer`**, au choix, d'après [son dépôt](https://github.com/blader/humanizer) :
-
-```bash
-npx skills add blader/humanizer --global          # méthode recommandée par l'auteur
-```
-
-```text
-/plugin marketplace add blader/humanizer          # ou en plugin, Claude Code 2.1.142 ou plus
-/plugin install humanizer@humanizer
-```
-
-```bash
-git clone https://github.com/blader/humanizer.git ~/.claude/skills/humanizer   # ou à la main
-```
-
-Les trois marchent. Le `SKILL.md` du dépôt est à sa racine, donc le clone direct suffit, et la vérification de dépendances du dashboard reconnaît les trois emplacements.
-
 **Si `humanizer` manque**, les lettres se rédigent quand même, Claude applique les règles d'écriture à la main. **Si `audit-cv-ats` manque**, seul le bouton d'audit du dashboard est inactif, le reste fonctionne. Aucun des deux n'est bloquant.
 
 ---
@@ -79,13 +66,16 @@ Les trois marchent. Le `SKILL.md` du dépôt est à sa racine, donc le clone dir
 
 ### Par plugin, la façon recommandée
 
-Dans Claude Code, trois commandes :
+Dans Claude Code, trois commandes, puis une quatrième pour le skill d'écriture :
 
 ```text
 /plugin marketplace add Sayn78/claude-emploi
 /plugin install recherche-emploi@claude-emploi
 /plugin install audit-cv-ats@claude-emploi
+/plugin install humanizer@claude-emploi
 ```
+
+**Relancez Claude Code ensuite** : c'est au redémarrage que les skills et le serveur Playwright deviennent actifs.
 
 La première ajoute ce dépôt à votre liste de sources. Les deux suivantes installent les skills. Les mises à jour se récupèrent ensuite avec `/plugin marketplace update claude-emploi`.
 
@@ -95,6 +85,7 @@ Si les commandes `/plugin` ne sont pas disponibles chez vous - c'est le cas de l
 claude plugin marketplace add Sayn78/claude-emploi
 claude plugin install recherche-emploi@claude-emploi
 claude plugin install audit-cv-ats@claude-emploi
+claude plugin install humanizer@claude-emploi
 ```
 
 ### À la main
