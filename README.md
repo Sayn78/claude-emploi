@@ -77,7 +77,7 @@ Dans Claude Code, trois commandes, puis une quatrième pour le skill d'écriture
 
 **Relancez Claude Code ensuite** : c'est au redémarrage que les skills et le serveur Playwright deviennent actifs.
 
-La première ajoute ce dépôt à votre liste de sources. Les deux suivantes installent les skills. Les mises à jour se récupèrent ensuite avec `/plugin marketplace update claude-emploi`.
+La première ajoute ce dépôt à votre liste de sources. Les suivantes installent les skills. Pour la suite, voir [Mettre à jour](#mettre-à-jour).
 
 Si les commandes `/plugin` ne sont pas disponibles chez vous - c'est le cas de l'extension VS Code - les mêmes opérations passent par le terminal :
 
@@ -99,6 +99,53 @@ cp -r claude-emploi/plugins/audit-cv-ats/skills/audit-cv-ats ~/.claude/skills/
 ```
 
 Sous Windows, `%USERPROFILE%\.claude\skills\` remplace `~/.claude/skills/`.
+
+---
+
+## Mettre à jour
+
+### Être prévenu automatiquement
+
+Claude Code n'active pas les mises à jour automatiques pour les marketplaces tiers comme celui-ci. À activer une fois, sinon vous resterez sur la version installée le premier jour :
+
+1. Tapez `/plugin`
+2. Onglet **Marketplaces**
+3. Sélectionnez `claude-emploi`
+4. **Enable auto-update**
+
+Claude Code vérifie ensuite les nouvelles versions au démarrage de chaque session, avec un délai aléatoire jusqu'à dix minutes, et vous demande de lancer `/reload-plugins` quand il en a trouvé une.
+
+Pour savoir ce qui a changé, le [CHANGELOG](CHANGELOG.md) liste chaque version. Vous pouvez aussi cliquer **Watch** puis **Custom** puis **Releases** en haut de ce dépôt : GitHub vous enverra un mail à chaque publication.
+
+### Le faire à la main
+
+Deux étapes, l'une ne remplace pas l'autre. La première rafraîchit le catalogue, la seconde récupère le code :
+
+```text
+/plugin marketplace update claude-emploi
+```
+
+puis, dans un terminal :
+
+```bash
+claude plugin update recherche-emploi
+claude plugin update audit-cv-ats
+```
+
+**Relancez Claude Code ensuite.** Le plugin déclare un serveur MCP, et un serveur MCP ne se recharge pas toujours proprement sans redémarrage. `/reload-plugins` suffit pour le reste.
+
+Si vous préférez tout faire depuis le terminal, `claude plugin marketplace update claude-emploi` remplace la commande slash.
+
+### Si rien ne bouge
+
+Vérifiez la version que vous avez avec `claude plugin list`, comparez-la au [CHANGELOG](CHANGELOG.md). Une désinstallation suivie d'une réinstallation règle les cas tordus :
+
+```bash
+claude plugin uninstall recherche-emploi@claude-emploi
+claude plugin install recherche-emploi@claude-emploi
+```
+
+Vos données ne risquent rien : la base SQLite, les CV et les lettres vivent dans votre dossier de travail, pas dans le plugin.
 
 ---
 

@@ -70,6 +70,8 @@ Puis **fermez Claude Code et rouvrez-le**. C'est à ce moment que les skills dev
 
 > Si vous ne trouvez pas où taper ces commandes : c'est dans la zone de saisie, là où vous écrivez normalement vos messages. La barre oblique au début fait apparaître une liste de suggestions.
 
+Une dernière manipulation, pour recevoir les corrections et les nouveautés sans y penser. Tapez `/plugin`, allez sur l'onglet **Marketplaces** avec la touche Tab, choisissez `claude-emploi` et sélectionnez **Enable auto-update**. Sans ça vous resterez sur la version d'aujourd'hui. Le détail est dans la section [Mettre à jour](README.md#mettre-à-jour) du README.
+
 ## Étape 6 : votre dossier de travail
 
 Créez un dossier quelque part, nommé par exemple `recherche-emploi`, dans vos Documents. Laissez-le vide.
