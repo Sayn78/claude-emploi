@@ -6,6 +6,8 @@ Tout tourne sur votre machine. Aucun compte à créer, aucun serveur distant, au
 
 > **In English.** Two French-language Claude Code skills for the French job market. `recherche-emploi` searches HelloWork and Indeed with a real browser, scores each posting against your PDF resume, stores results in a local SQLite database and serves a dashboard on `localhost:3000` with a kanban board and cover-letter drafting. `audit-cv-ats` audits a resume against applicant tracking systems and returns a score out of 20, the missing keywords and an optimised version. Everything runs locally; the skills speak French and target French job boards, so they are of limited use elsewhere.
 
+![Le tableau des offres, avec le detail a droite](docs/captures/01-offres.png)
+
 ---
 
 ## Les deux skills
@@ -161,11 +163,15 @@ Trois filtres au-dessus de la liste : par poste, par entreprise, par ville.
 
 L'onglet **Suivi** est un kanban en cinq colonnes : À postuler, Postulée, Entretien, Refus, Acceptée. Les offres arrivent dans la première. Vous les déplacez à la souris au fur et à mesure. Une note libre par offre permet de retenir le nom d'un contact, une date de rappel ou ce qui s'est dit en entretien.
 
+![Le kanban de suivi des candidatures](docs/captures/02-suivi.png)
+
 ### Les lettres de motivation
 
 Depuis le détail d'une offre, un bouton demande la lettre. Depuis l'onglet Lettres, un autre les rédige toutes d'un coup pour les offres qui n'en ont pas encore, du meilleur score au moins bon.
 
 Une règle tient tout : **rien dans la lettre qui ne soit pas dans votre CV**. Pas d'expérience inventée, pas de diplôme ajouté, pas d'enthousiasme de commande. La lettre passe ensuite par le skill `humanizer` pour retirer les tics d'écriture d'IA.
+
+![Les lettres de motivation](docs/captures/05-lettres.png)
 
 ### Les CV
 
@@ -173,11 +179,21 @@ Plusieurs CV peuvent cohabiter dans `cv/`. Un seul est actif à la fois, c'est c
 
 L'onglet **CV** affiche le PDF en grand, à faire défiler, avec le texte sélectionnable. Un clic sur une carte de CV l'ouvre. Le bouton d'audit ATS lance le second skill et rapatrie la note dans le dashboard.
 
+![L'onglet CV, avec la visionneuse PDF et le resultat de l'audit ATS](docs/captures/04-cv.png)
+
+### Retrouver une recherche passée
+
+L'onglet **Historique** garde une ligne par recherche : les mots-clés, le site, le CV utilisé, l'objectif, le nombre d'annonces lues sur le plafond, et les offres retenues. Le détail d'une recherche affiche aussi les notes que Claude a prises en chemin : pourquoi il a écarté telle annonce, où il a buté, ce qu'il n'a pas eu le temps de lire.
+
+![L'historique des recherches et le detail de l'une d'elles](docs/captures/07-historique.png)
+
 ### Le chat
 
 L'onglet **Chat** parle à la session Claude ouverte. Vous écrivez, Claude répond dans la page. Et surtout, quand Claude a une question, elle s'affiche ici avec les réponses possibles en boutons : vous cliquez et il reprend son travail. Il raconte aussi ce qu'il fait pendant une recherche longue, ce qui évite de rester devant une page qui ne bouge pas.
 
 Une pastille en haut indique **Claude écoute** ou **Claude hors ligne**. Hors ligne, les boutons sont grisés : c'est normal, il faut une session Claude Code ouverte avec le skill lancé.
+
+![Le chat, avec une question de Claude et ses reponses en boutons](docs/captures/03-chat.png)
 
 ### La page des dépendances
 
@@ -192,6 +208,16 @@ Le bouton « Vérifier les dépendances » affiche une case par pré-requis. Ver
 | Watcher | lancer le skill dans une session Claude Code |
 | Skill humanizer / audit-cv-ats | les installer, voir les pré-requis |
 | HelloWork / Indeed | un captcha ou un écran de vérification est apparu, voir les astuces |
+
+![La page des dependances, une case par pre-requis](docs/captures/06-systeme.png)
+
+### Changer les couleurs
+
+Le bouton **Theme** en haut à droite ouvre trois modes - Auto, Clair, Sombre - et six couleurs d'accent. Auto suit le réglage de votre système. Le choix est gardé dans le navigateur et appliqué avant le premier affichage, sans le clignotement habituel.
+
+| Sombre | Clair |
+| --- | --- |
+| ![Theme sombre](docs/captures/08-theme-sombre.png) | ![Theme clair, accent violet](docs/captures/09-theme-clair.png) |
 
 ---
 
@@ -244,5 +270,7 @@ MIT, voir [LICENSE](LICENSE).
 - [PDF.js](https://mozilla.github.io/pdf.js/) (Mozilla Foundation), Apache 2.0. Les fichiers `scripts/vendor/` sont distribués tels quels, entête de licence comprise.
 - [humanizer](https://github.com/blader/humanizer), skill tiers, à installer séparément.
 - Les grilles ATS d'`audit-cv-ats` s'appuient sur le comportement documenté de Workday, Taleo, SuccessFactors, iCIMS, Greenhouse, Lever, Talentsoft, Flatchr, Teamtailor et Recruitee.
+
+Les captures de ce README proviennent d'une base de démonstration : le CV, les entreprises et les annonces sont inventés.
 
 Projet indépendant, sans lien avec Anthropic, HelloWork ou Indeed.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.7.0';
+const VERSION = '2.7.1';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -1514,6 +1514,8 @@ var S={offers:[],searches:[],letters:[],cvs:[],cv:null,actions:[],audits:[],mess
 var tab='offres',filt={q:'',champ:'',reco:'',status:'',min:0,cv:''},kfilt={q:'',champ:'',cv:'',min:0},openId=null,openSearchId=null,cvView=null;
 var dragging=false,resizing=false,lockUntil=0,last='',tabRendu=null;
 var RECO={postuler:'Postuler',a_etudier:'À étudier',ne_pas_postuler:'Ne pas postuler'};
+var SITE={hellowork:'HelloWork',indeed:'Indeed',les_deux:'HelloWork et Indeed'};
+function nomSite(v){return SITE[v]||v||'';}
 var STAT={a_postuler:'À postuler',postulee:'Postulée',entretien:'Entretien',refus:'Refus',accepte:'Acceptée',ecartee:'Écartée',nouvelle:'Nouvelle'};
 var KAN=[['a_postuler','À postuler'],['postulee','Postulée'],['entretien','Entretien'],['refus','Refus'],['accepte','Acceptée']];
 var APPLIED=['postulee','entretien','refus','accepte'];
@@ -1992,7 +1994,7 @@ function pOffer(b){
  var head=h('div',{class:'panel-head'});
  head.appendChild(closeX(function(){openId=null;render();}));
  head.appendChild(h('h2',{style:'padding-right:32px',text:'#'+o.id+' '+o.title}));
- head.appendChild(h('div',{class:'mut',text:[o.company,o.location,o.contract,o.salary,o.remote,o.posted_at?'publiée : '+o.posted_at:null].filter(Boolean).join(' · ')}));
+ head.appendChild(h('div',{class:'mut',text:[o.company,o.location,o.contract,o.salary,o.remote,o.posted_at?'publiée le '+dPub(o.posted_at):null].filter(Boolean).join(' · ')}));
  head.appendChild(h('div',{class:'bar'},
   h('a',{class:'b',href:safe(o.url),target:'_blank',rel:'noopener noreferrer',text:'Voir l\\'annonce'}),
   sel(KAN.concat([['ecartee','Écartée']]),o.status,function(v){moveOffer(o.id,v);})));
@@ -2046,7 +2048,7 @@ function vHist(m){
   var lues=h('td',{},h('span',{text:String(seen)+(s.max_seen!=null?' / '+s.max_seen:'')}),
    capped?h('div',{class:'mut',style:'font-size:12px',text:'plafond atteint'}):null);
   tb.appendChild(h('tr',{class:openSearchId===s.id?'on':'',onclick:function(){openSearchId=s.id;render();}},
-   h('td',{text:d(s.started_at)}),h('td',{text:s.title}),h('td',{text:s.location}),h('td',{text:s.site}),
+   h('td',{class:'nw',text:d(s.started_at)}),h('td',{text:s.title}),h('td',{text:s.location}),h('td',{class:'nw',text:nomSite(s.site)}),
    h('td',{class:'mut',text:s.cv_filename||''}),h('td',{text:String(s.target_count||'')}),lues,
    h('td',{text:String(s.offers_saved)}),h('td',{text:s.finished_at?'Terminée':'En cours'})));});
  m.appendChild(h('div',{class:'wrap'},h('table',{},h('thead',{},head),tb)));
@@ -2058,7 +2060,7 @@ function pSearch(b){
  var head=h('div',{class:'panel-head'});
  head.appendChild(closeX(function(){openSearchId=null;render();}));
  head.appendChild(h('h2',{style:'padding-right:32px',text:'Recherche #'+s.id}));
- head.appendChild(h('div',{class:'mut',text:[s.title,s.location,s.site].filter(Boolean).join(' · ')}));
+ head.appendChild(h('div',{class:'mut',text:[s.title,s.location,nomSite(s.site)].filter(Boolean).join(' · ')}));
  b.appendChild(head);
  var seen=s.offers_seen||0;
  [['Lancée le',d(s.started_at)],['Terminée le',s.finished_at?d(s.finished_at):'en cours'],
