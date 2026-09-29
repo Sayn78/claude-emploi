@@ -10,6 +10,18 @@ Les numéros suivent [semver](https://semver.org/lang/fr/) : le chiffre du milie
 
 ## recherche-emploi
 
+### 2.13.0 - 2026-09-29
+
+LinkedIn remarche, et les deux vues du dashboard se trient.
+
+LinkedIn ne ramenait plus rien : la page de résultats basculait sur `/authwall` avant d'avoir servi une seule annonce. Le skill passe maintenant par les routes que LinkedIn réserve à ses visiteurs déconnectés, qui n'ont ni JavaScript ni mur de connexion.
+
+- **LinkedIn de nouveau exploitable.** Dix annonces par appel, autant de pages que le budget de la recherche le permet - le plafond d'une vingtaine d'annonces disparaît, c'était le mur de connexion qui l'imposait. La date de publication arrive en clair, là où les autres sites la donnent en texte libre.
+- **Tri par colonne dans l'onglet Offres.** Un clic sur un en-tête trie, un second inverse. Le tri est retenu d'une session à l'autre.
+- **Tri du kanban Suivi.** Un sélecteur trie les cinq colonnes d'un coup : score, date de candidature, date de déplacement, date d'ajout, site, entreprise ou poste.
+- **Les lignes du tableau prennent la couleur de leur statut** : bleu pour une candidature en attente, vert quand ça avance, rouge pour un refus, gris pour une offre écartée.
+- **La colonne « Avis » disparaît**, son contenu passe sous la barre de score. « Postuler » devient « Conseillée » pour ne plus se confondre avec le statut « À postuler ».
+
 ### 2.12.0 - 2026-09-23
 
 Les sites d'emploi sont vérifiés une fois, au premier lancement.

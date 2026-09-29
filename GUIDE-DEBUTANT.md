@@ -8,7 +8,7 @@ Comptez trois quarts d'heure la première fois, dont la moitié en téléchargem
 
 ## À quoi ça sert, concrètement
 
-Vous déposez votre CV dans un dossier. Vous dites à Claude quel poste et quelle ville vous cherchez. Il ouvre un navigateur sous vos yeux, parcourt HelloWork et Indeed, lit les annonces une par une et garde celles qui correspondent vraiment à votre CV, avec une note sur 100 et une explication. Vous obtenez une liste triée, un tableau pour suivre vos candidatures, et des lettres de motivation rédigées à partir de votre seul CV.
+Vous déposez votre CV dans un dossier. Vous dites à Claude quel poste et quelle ville vous cherchez. Il ouvre un navigateur sous vos yeux, parcourt France Travail, HelloWork, Free-Work, Indeed et LinkedIn, lit les annonces une par une et garde celles qui correspondent vraiment à votre CV, avec une note sur 100 et une explication. Vous obtenez une liste triée, un tableau pour suivre vos candidatures, et des lettres de motivation rédigées à partir de votre seul CV.
 
 Rien ne part sur Internet à part les pages d'annonces que le navigateur consulte. Votre CV reste sur votre ordinateur.
 
@@ -171,7 +171,7 @@ Les annonces tournent vite. Une recherche par semaine sur les mêmes mots-clés 
 
 ## Quelques conseils appris à l'usage
 
-Connectez-vous une fois à HelloWork et Indeed dans le navigateur que Claude ouvre. Ce n'est pas obligatoire pour chercher, mais Indeed affiche parfois un mur de connexion en deuxième page de résultats.
+Passez une fois sur HelloWork et Indeed dans le navigateur que Claude ouvre, le temps de traiter leur bandeau de cookies. Ce n'est pas obligatoire pour chercher, mais Indeed affiche parfois un mur de connexion en deuxième page de résultats. France Travail et Free-Work n'en ont pas besoin, et sur LinkedIn ne vous connectez pas : Claude ne se servira pas de votre session.
 
 Gardez deux versions de votre CV si vous visez deux métiers. Une même annonce peut passer de 45 à 72 selon le CV utilisé pour la noter.
 
@@ -189,6 +189,6 @@ Le tableau de bord reste consultable même quand Claude est fermé. Vos offres, 
 
 **Et si je n'ai pas de CV en PDF ?** Exportez-le en PDF depuis Word ou Google Docs. C'est le seul format lu.
 
-**Ça marche pour quels métiers ?** Tous ceux qu'on trouve sur HelloWork et Indeed France. Ce n'est pas réservé à l'informatique.
+**Ça marche pour quels métiers ?** Tous ceux qu'on trouve sur France Travail, HelloWork et Indeed. Ce n'est pas réservé à l'informatique - Free-Work est le seul des cinq sites à ne couvrir que la tech.
 
 **Et à l'étranger ?** Non. Les deux sites visés sont français.

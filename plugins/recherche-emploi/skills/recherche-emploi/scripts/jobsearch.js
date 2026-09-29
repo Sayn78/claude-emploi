@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.12.0';
+const VERSION = '2.13.0';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -344,11 +344,13 @@ function normalizeUrl(u) {
   if (p.hostname.includes('indeed.') && p.searchParams.get('jk')) return p.origin + '/viewjob?jk=' + p.searchParams.get('jk');
   // LinkedIn : la meme annonce s'atteint par /jobs/view/<id>, par le lien de la
   // liste en mode visiteur qui prefixe l'id d'un slug (/jobs/view/admin-h-f-at-
-  // acme-4428859421), ou par /jobs/search?currentJobId=<id> quand la fiche
-  // s'ouvre dans le panneau de droite. Sans ca, has-url ne reconnait pas une
+  // acme-4428859421), par /jobs/search?currentJobId=<id> quand la fiche s'ouvre
+  // dans le panneau de droite, et par la route invite que lit le skill
+  // (/jobs-guest/jobs/api/jobPosting/<id>). Sans ca, has-url ne reconnait pas une
   // offre deja lue et le plafond part en doublons. L'hote varie aussi (fr., www.).
   if (p.hostname.includes('linkedin.')) {
     const id = (p.pathname.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/) || [])[1]
+      || (p.pathname.match(/\/jobs-guest\/jobs\/api\/jobPosting\/(\d+)/) || [])[1]
       || ((p.searchParams.get('currentJobId') || '').match(/^\d+$/) || [])[0];
     if (id) return 'https://www.linkedin.com/jobs/view/' + id;
   }
@@ -1557,6 +1559,16 @@ th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-
 th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:600;
  position:sticky;top:0;background:var(--card);z-index:1}
 tbody tr{cursor:pointer;transition:background var(--t)}
+/* Teinte de fond selon le statut : la progression d'une candidature se lit d'un
+   coup d'oeil. color-mix sur transparent se composite sur var(--card), donc une
+   seule declaration couvre le clair et le sombre. "a_postuler" ne recoit rien,
+   c'est l'etat neutre. Ces regles passent AVANT :hover et .on : elles ont la
+   meme specificite, c'est donc l'ordre de declaration qui tranche. */
+tbody tr.s-postulee{background:color-mix(in oklab,var(--acc) 7%,transparent)}
+tbody tr.s-entretien{background:color-mix(in oklab,var(--ok) 8%,transparent)}
+tbody tr.s-accepte{background:color-mix(in oklab,var(--ok) 16%,transparent)}
+tbody tr.s-refus{background:color-mix(in oklab,var(--ko) 8%,transparent)}
+tbody tr.s-ecartee{background:color-mix(in oklab,var(--mut) 8%,transparent);color:var(--mut)}
 tbody tr:hover{background:var(--tint)}tr:last-child td{border-bottom:0}
 tbody tr.on{background:var(--tint);box-shadow:inset 3px 0 0 var(--acc)}
 /* colonnes secondaires : une ligne, coupee proprement, texte complet en infobulle */
@@ -1567,7 +1579,11 @@ table.fixe{table-layout:fixed;min-width:0;width:100%}
 table.fixe td,table.fixe th{overflow:hidden;text-overflow:ellipsis}
 table.fixe td.cut,table.fixe td.nw,table.fixe td.poste{max-width:none;min-width:0}
 table.fixe td.poste{white-space:normal}
-table.fixe th{position:relative;white-space:nowrap}
+/* En-tete cliquable : trie la colonne. La poignee de redimensionnement garde son
+   propre curseur, et le gestionnaire de tri l'ignore. */
+table.fixe th{position:relative;white-space:nowrap;cursor:pointer;user-select:none;-webkit-user-select:none}
+table.fixe th:hover{color:var(--fg)}
+th .fl{margin-left:4px;color:var(--acc)}
 .rz{position:absolute;top:0;right:0;width:9px;height:100%;cursor:col-resize;touch-action:none}
 .rz::before{content:'';position:absolute;top:22%;bottom:22%;right:4px;width:1px;background:var(--line)}
 .rz:hover::before,.rz.on::before{top:0;bottom:0;right:3px;width:2px;background:var(--acc)}
@@ -1581,6 +1597,10 @@ td.poste{min-width:186px}
 .st-ecartee{color:var(--mut)}
 td strong{font-weight:600}
 th:first-child,td:first-child{padding-left:16px}
+/* Colonne Score : la barre, et l'avis empile juste dessous. L'avis n'a plus sa
+   propre colonne, il complete le score au lieu de vivre a l'autre bout du tableau. */
+.scorecol{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.tag.sous{font-size:11px;padding:1px 7px}
 .score{display:flex;align-items:center;gap:9px;min-width:112px}
 .score i{flex:1;height:7px;border-radius:99px;background:var(--line);overflow:hidden;display:block}
 .score i b{display:block;height:100%;border-radius:99px;animation:fill .5s cubic-bezier(.2,.8,.3,1)}
@@ -1723,10 +1743,78 @@ main.anim>*:nth-child(n+4){animation-delay:.12s}
 }catch(e){}})();
 </script>
 <script>
+// --- tri des offres -------------------------------------------------------
+// Une seule table de cles pour les deux vues : le tableau des offres trie en
+// cliquant un en-tete, le kanban trie ses cinq colonnes d'un coup depuis sa
+// barre de filtres. n:true marque les cles numeriques ou chronologiques, qui
+// partent en decroissant au premier clic - c'est ce qu'on attend d'un score ou
+// d'une date. L'accesseur renvoie null quand il n'y a rien a trier.
+var ORDRE_STATUT=['a_postuler','postulee','entretien','accepte','refus','ecartee'];
+var ORDRE_AVIS=['postuler','a_etudier','ne_pas_postuler'];
+function rang(liste,v){var i=liste.indexOf(v);return i<0?null:i;}
+var TRIS={
+ match_score:{n:true,v:function(o){return o.match_score;}},
+ title:{v:function(o){return o.title||'';}},
+ company:{v:function(o){return o.company||'';}},
+ location:{v:function(o){return o.location||'';}},
+ contract:{v:function(o){return o.contract||'';}},
+ salary:{v:function(o){return o.salary||'';}},
+ posted_at:{n:true,v:function(o){return dateVal(o.posted_at);}},
+ status:{n:true,v:function(o){return rang(ORDRE_STATUT,o.status);}},
+ recommendation:{n:true,v:function(o){return rang(ORDRE_AVIS,o.recommendation);}},
+ cv_filename:{v:function(o){return o.cv_filename||'';}},
+ found_at:{n:true,v:function(o){return dateVal(o.found_at);}},
+ applied_at:{n:true,v:function(o){return dateVal(o.applied_at);}},
+ status_updated_at:{n:true,v:function(o){return dateVal(o.status_updated_at);}},
+ site:{v:function(o){return nomSite(o.site);}}
+};
+// Pendant numerique de dPub : meme lecture des formats rencontres (JJ/MM/AAAA,
+// ISO, "10 septembre 2026", reference accolee apres un tiret), mais renvoie un
+// horodatage comparable. null si illisible : la ligne part en fin de liste.
+var MOIS={janvier:1,'février':2,fevrier:2,mars:3,avril:4,mai:5,juin:6,juillet:7,
+          'août':8,aout:8,septembre:9,octobre:10,novembre:11,'décembre':12,decembre:12};
+function dateVal(v){
+ if(!v)return null;
+ var t=String(v).split(/\\s+-\\s+/)[0].trim();
+ var m=t.match(/^(\\d{1,2})\\/(\\d{2})\\/(\\d{4})$/);
+ if(m)t=m[3]+'-'+m[2]+'-'+('0'+m[1]).slice(-2);
+ var f=t.match(/^(\\d{1,2})\\s+([a-zà-öø-ÿ]+)\\s+(\\d{4})$/i);
+ if(f&&MOIS[f[2].toLowerCase()])t=f[3]+'-'+('0'+MOIS[f[2].toLowerCase()]).slice(-2)+'-'+('0'+f[1]).slice(-2);
+ var n=Date.parse(t);
+ return isNaN(n)?null:n;
+}
+// Les valeurs vides tombent toujours en dernier, quel que soit le sens : une
+// annonce sans salaire n'a rien a faire en tete de liste. L'id departage, pour
+// que l'ordre ne bouge pas d'un sondage a l'autre.
+function comparateur(cle,sens){
+ var c=TRIS[cle]||TRIS.match_score;
+ return function(a,b){
+  var x=c.v(a),y=c.v(b);
+  var xv=(x===null||x===undefined||x===''),yv=(y===null||y===undefined||y==='');
+  if(xv||yv)return (xv&&yv)?b.id-a.id:(xv?1:-1);
+  var r=c.n?(x-y):String(x).localeCompare(String(y),'fr',{sensitivity:'base'});
+  return r?r*sens:b.id-a.id;
+ };
+}
+function trier(rows,cle,sens){return rows.slice().sort(comparateur(cle,sens));}
+function triLu(cle,colDef,sensDef){
+ try{
+  var v=JSON.parse(localStorage.getItem('jobsearch.tri.'+cle)||'null');
+  if(v&&TRIS[v.col]&&(v.sens===1||v.sens===-1))return {col:v.col,sens:v.sens};
+ }catch(e){}
+ return {col:colDef,sens:sensDef};
+}
+function triEcrit(cle,tri){try{localStorage.setItem('jobsearch.tri.'+cle,JSON.stringify(tri));}catch(e){}}
+function sensDefaut(cle){return (TRIS[cle]||{}).n?-1:1;}
+
 var S={offers:[],searches:[],letters:[],cvs:[],cv:null,actions:[],audits:[],messages:[],questions:[],deps:{},logos:{},version:'',watcher_alive:false,pdfjs:false};
-var tab='offres',filt={q:'',champ:'',reco:'',status:'',min:0,cv:'',contrat:''},kfilt={q:'',champ:'',cv:'',min:0},openId=null,openSearchId=null,cvView=null;
+var tab='offres',filt={q:'',champ:'',reco:'',status:'',min:0,cv:'',contrat:'',tri:triLu('offres','match_score',-1)},
+    kfilt={q:'',champ:'',cv:'',min:0,tri:triLu('suivi','match_score',-1)},openId=null,openSearchId=null,cvView=null;
 var dragging=false,resizing=false,lockUntil=0,last='',tabRendu=null;
-var RECO={postuler:'Postuler',a_etudier:'À étudier',ne_pas_postuler:'Ne pas postuler'};
+// Libelles d'affichage seulement : les cles en base ne bougent pas. "Conseillée"
+// plutot que "Postuler" pour ne plus confondre l'avis avec le statut "À postuler",
+// et c'est deja le mot employe par la tuile d'en-tete.
+var RECO={postuler:'Conseillée',a_etudier:'À étudier',ne_pas_postuler:'À éviter'};
 // les_deux n'est plus proposable : il ne reste que pour afficher les recherches
 // enregistrees avant le multi-sites.
 var SITE={hellowork:'HelloWork',indeed:'Indeed',france_travail:'France Travail',
@@ -2250,13 +2338,38 @@ function vOffres(m){
   sel([['0','Score mini'],['50','50 %'],['60','60 %'],['70','70 %'],['80','80 %']],String(filt.min),function(v){filt.min=Number(v);body();}));
  if(multi)bar.appendChild(sel(cvOpts(),filt.cv,function(v){filt.cv=v;body();}));
  m.appendChild(bar);
- var heads=['Score','Poste','Entreprise','Lieu','Contrat','Salaire','Publiée','Avis','Statut'].concat(multi?['CV']:[]).concat(['Trouvée le','Lien']);
- var tb=h('tbody'),head=h('tr');heads.forEach(function(t){head.appendChild(h('th',{text:t}));});
+ // L'avis n'a plus de colonne a lui : il se lit sous la barre de score, la ou on
+ // regarde deja. Chaque colonne porte la cle de tri que son en-tete declenche.
+ var cols=[['Score','match_score'],['Poste','title'],['Entreprise','company'],['Lieu','location'],
+           ['Contrat','contract'],['Salaire','salary'],['Publiée','posted_at'],['Statut','status']]
+  .concat(multi?[['CV','cv_filename']]:[])
+  .concat([['Trouvée le','found_at'],['Lien','site']]);
+ var tb=h('tbody'),head=h('tr');
+ cols.forEach(function(c){
+  head.appendChild(h('th',{title:'Trier par '+c[0].toLowerCase(),onclick:function(e){
+   // colonnesReglables pose une poignee dans chaque en-tete : un clic sec dessus
+   // ne doit pas trier, seul le glissement l'interesse.
+   if(e.target.classList.contains('rz'))return;
+   if(filt.tri.col===c[1])filt.tri.sens=-filt.tri.sens;
+   else filt.tri={col:c[1],sens:sensDefaut(c[1])};
+   triEcrit('offres',filt.tri);entetes();body();
+  }},h('span',{class:'lab',text:c[0]})));});
  var tbl=h('table',{},h('thead',{},head),tb);
  m.appendChild(h('div',{class:'wrap'},tbl));
- // 12 colonnes quand plusieurs CV coexistent, 11 sinon : les defauts suivent.
- var defs=[100,198,142,130,98,122,118,96,106].concat(multi?[98]:[]).concat([118,88]);
- colonnesReglables(tbl,multi?'offres12':'offres11',defs);
+ // 11 colonnes quand plusieurs CV coexistent, 10 sinon : les defauts suivent.
+ // Cle renommee en offres-v2-* : le layout multi-CV fait desormais 11 colonnes,
+ // soit exactement la longueur de l'ancien tableau offres11, et colsLues ne
+ // verifie que la longueur - les anciennes largeurs iraient sur les mauvaises.
+ var defs=[140,198,142,130,98,122,118,106].concat(multi?[98]:[]).concat([118,88]);
+ colonnesReglables(tbl,multi?'offres-v2-11':'offres-v2-10',defs);
+ // Seul le libelle est repose : la poignee de redimensionnement est son voisin
+ // dans le <th> et doit survivre a chaque changement de tri.
+ function entetes(){
+  cols.forEach(function(c,i){
+   var lab=head.children[i].querySelector('.lab');
+   lab.replaceChildren(document.createTextNode(c[0]));
+   if(filt.tri.col===c[1])lab.appendChild(h('span',{class:'fl',text:filt.tri.sens<0?' ▼':' ▲'}));
+  });}
  function body(){
   tb.replaceChildren();
   var rows=S.offers.filter(function(o){
@@ -2264,30 +2377,36 @@ function vOffres(m){
     &&(!filt.reco||o.recommendation===filt.reco)&&(!filt.status||o.status===filt.status)
     &&(!filt.contrat||typeContrat(o.contract)===filt.contrat)
     &&(!filt.cv||String(o.cv_id)===filt.cv)&&o.match_score>=filt.min;});
-  if(!rows.length){tb.appendChild(h('tr',{},h('td',{colspan:String(heads.length),class:'empty',text:'Aucune offre pour le moment.'})));return;}
+  rows=trier(rows,filt.tri.col,filt.tri.sens);
+  if(!rows.length){tb.appendChild(h('tr',{},h('td',{colspan:String(cols.length),class:'empty',text:'Aucune offre pour le moment.'})));return;}
   rows.forEach(function(o){
-   var tr=h('tr',{class:openId===o.id?'on':'',onclick:function(){openId=o.id;renderPanel();body();}},
-    h('td',{},score(o.match_score)),
+   var tr=h('tr',{class:(openId===o.id?'on ':'')+'s-'+o.status,onclick:function(){openId=o.id;renderPanel();body();}},
+    h('td',{},h('div',{class:'scorecol'},score(o.match_score),
+      h('span',{class:'tag sous '+o.recommendation,text:RECO[o.recommendation]||o.recommendation}))),
     h('td',{class:'poste'},h('strong',{text:o.title}),o.letters_count?h('div',{class:'mut',text:o.letters_count+' lettre(s)'}):null),
     h('td',{class:'cut w2',title:o.company||'',text:o.company||''}),
     h('td',{class:'cut',title:o.location||'',text:o.location||''}),
     h('td',{class:'cut',title:o.contract||'',text:o.contract||''}),
     h('td',{class:'cut',title:o.salary||'',text:sal(o.salary)}),
     h('td',{class:'nw',title:o.posted_at||'',text:dPub(o.posted_at)}),
-    h('td',{},h('span',{class:'tag '+o.recommendation,text:RECO[o.recommendation]||o.recommendation})),
     h('td',{class:'nw'},h('span',{class:'st st-'+o.status,text:STAT[o.status]||o.status})));
    if(multi)tr.appendChild(h('td',{class:'mut cut w0',title:o.cv_filename||'',text:o.cv_filename||''}));
    tr.appendChild(h('td',{class:'nw',text:d(o.found_at)}));
    tr.appendChild(h('td',{},h('a',{href:safe(o.url),target:'_blank',rel:'noopener noreferrer',text:o.site||'ouvrir',onclick:function(e){e.stopPropagation();}})));
    tb.appendChild(tr);});}
- body();
+ entetes();body();
 }
 
 /* ---- onglet Suivi (kanban) ---- */
+// Le tri s'applique aux cinq colonnes d'un coup : on trie une fois la liste
+// filtree, body() la repartit ensuite par statut en gardant l'ordre.
+var TRI_KAN=[['match_score','Tri : score'],['applied_at','Tri : date de candidature'],
+             ['status_updated_at','Tri : date de déplacement'],['found_at','Tri : date d\\'ajout'],
+             ['site','Tri : site'],['company','Tri : entreprise'],['title','Tri : poste']];
 function kanbanRows(){
- return S.offers.filter(function(o){
+ return trier(S.offers.filter(function(o){
   return matchTxt(o,kfilt.q,kfilt.champ)
-   &&(!kfilt.cv||String(o.cv_id)===kfilt.cv)&&o.match_score>=kfilt.min;});
+   &&(!kfilt.cv||String(o.cv_id)===kfilt.cv)&&o.match_score>=kfilt.min;}),kfilt.tri.col,kfilt.tri.sens);
 }
 function kcard(o){
  var c=h('article',{class:'kcard'+(openId===o.id?' on':''),draggable:'true','data-id':String(o.id),
@@ -2335,6 +2454,12 @@ function vKanban(m){
   sel(CHAMPS,kfilt.champ,function(v){kfilt.champ=v;q.setAttribute('placeholder',CHAMP_PH[v]);body();}),q,
   sel([['0','Score mini'],['50','50 %'],['60','60 %'],['70','70 %'],['80','80 %']],String(kfilt.min),function(v){kfilt.min=Number(v);body();}));
  if(S.cvs.length>1)bar.appendChild(sel(cvOpts(),kfilt.cv,function(v){kfilt.cv=v;body();}));
+ var sensBtn=h('button',{class:'b',title:'Inverser le sens du tri',text:kfilt.tri.sens<0?'▼':'▲',
+  onclick:function(){kfilt.tri.sens=-kfilt.tri.sens;majSens();triEcrit('suivi',kfilt.tri);body();}});
+ function majSens(){sensBtn.textContent=kfilt.tri.sens<0?'▼':'▲';}
+ bar.appendChild(sel(TRI_KAN,kfilt.tri.col,function(v){
+  kfilt.tri={col:v,sens:sensDefaut(v)};majSens();triEcrit('suivi',kfilt.tri);body();}));
+ bar.appendChild(sensBtn);
  bar.appendChild(h('span',{class:'mut',style:'font-size:13px',text:'Glisser-déposer entre colonnes, ou statut dans la fiche à droite.'}));
  m.appendChild(bar);
  var k=h('div',{id:'kanban'});
