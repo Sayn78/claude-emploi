@@ -68,10 +68,39 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
    S'il préfère s'en occuper, donne-lui https://nodejs.org (version LTS) et arrête-toi là : rien ne peut fonctionner sans Node.
 
-2. **Script** : copie tout le dossier `scripts/` du skill vers le dossier de travail si la version diffère. Le dossier de ce skill t'est indiqué au chargement ; remplace les deux chemins. La copie est récursive : elle emporte `jobsearch.js`, `vendor/` **et** `logo/`, sans quoi l'onglet CV ne peut pas afficher les PDF et les logos des sites manquent au dashboard.
+2. **Version du plugin** : vérifie qu'une version plus récente n'est pas publiée. Le dossier de ce skill t'est indiqué au chargement, passe-le en argument.
 
    ```bash
-   node -e "const fs=require('fs'),p=require('path');const V=s=>((s.match(/const VERSION = '([^']+)'/)||[])[1]||'');const src=process.argv[1],dst=process.argv[2];const sf=p.join(src,'jobsearch.js'),df=p.join(dst,'jobsearch.js');let cur='';try{cur=V(fs.readFileSync(df,'utf8'))}catch{};let want='';try{want=V(fs.readFileSync(sf,'utf8'))}catch{console.error('introuvable : '+sf);process.exit(1)};if(!want){console.error('VERSION introuvable dans '+sf);process.exit(1)}const copied=cur!==want;if(copied){fs.mkdirSync(dst,{recursive:true});fs.cpSync(src,dst,{recursive:true})}console.log(JSON.stringify({installed:want,previous:cur,copied}))" "CHEMIN/DU/SKILL/scripts" "DOSSIER/DE/TRAVAIL"
+   node -e "const fs=require('node:fs'),p=require('node:path');const cmp=(a,b)=>{const A=String(a).split('.').map(Number),B=String(b).split('.').map(Number);for(let i=0;i<3;i++)if((A[i]||0)!==(B[i]||0))return (A[i]||0)<(B[i]||0)?-1:1;return 0};(async(dir)=>{let loc;try{loc=JSON.parse(fs.readFileSync(p.join(dir,'..','..','.claude-plugin','plugin.json'),'utf8'))}catch{return {mode:'manuel'}}let repo=null;try{const home=process.env.USERPROFILE||process.env.HOME;const k=JSON.parse(fs.readFileSync(p.join(home,'.claude','plugins','known_marketplaces.json'),'utf8'));const v=Object.values(k).filter(m=>(m.source||{}).repo);repo=(v.find(m=>dir.includes(p.basename(m.installLocation||' ')))||v[0]||{}).source.repo}catch{};if(!repo)return {mode:'plugin',installee:loc.version,erreur:'marketplace introuvable'};try{const r=await fetch('https://raw.githubusercontent.com/'+repo+'/HEAD/.claude-plugin/marketplace.json',{signal:AbortSignal.timeout(4000)});if(!r.ok)throw new Error('HTTP '+r.status);const e=((await r.json()).plugins||[]).find(x=>x.name===loc.name);if(!e||!e.version)return {mode:'plugin',installee:loc.version,erreur:'absent du catalogue'};return {mode:'plugin',nom:loc.name,marketplace:repo,installee:loc.version,derniere:e.version,a_jour:cmp(loc.version,e.version)>=0}}catch(e){return {mode:'plugin',installee:loc.version,erreur:String(e.message||e)}}})(process.argv[1]).then(o=>console.log(JSON.stringify(o)))" "CHEMIN/DU/SKILL"
+   ```
+
+   Trois sorties possibles, trois conduites :
+
+   - `{"mode":"manuel"}` - le skill a été copié à la main dans `~/.claude/skills/`, il n'y a pas de plugin à mettre à jour. Passe au point suivant sans rien dire.
+   - un champ `erreur` - machine hors ligne, proxy d'entreprise, dépôt injoignable. **Ne bloque pas et n'en parle pas** : le contrôle est un confort, pas un pré-requis. Passe au point suivant.
+   - `a_jour: false` - une version plus récente est publiée. Mets-la en place :
+
+   ```bash
+   claude plugin marketplace update <nom du marketplace>
+   claude plugin update <nom du plugin>@<nom du marketplace>
+   ```
+
+   Le nom du marketplace est le dernier segment de `marketplace` (`Sayn78/claude-emploi` → `claude-emploi`). Les deux commandes sont nécessaires : la première rafraîchit le catalogue, la seconde récupère le code.
+
+   Ensuite, **dis-le en deux lignes et continue le démarrage normalement** :
+
+   > La 2.15.0 est disponible, je viens de l'installer (tu étais en 2.14.0). Elle ne prendra effet qu'au prochain démarrage de Claude Code - cette session continue sur l'ancienne version, ce qui ne pose aucun problème.
+
+   N'interromps pas la session et ne demande pas de redémarrer tout de suite : le dashboard, les offres et le suivi fonctionnent très bien sur la version en cours. L'utilisateur redémarrera quand ça l'arrange.
+
+   Si la mise à jour échoue, dis-le en une ligne avec la commande à lancer à la main, et continue. Rien de ce qui suit n'en dépend.
+
+3. **Script** : copie tout le dossier `scripts/` du skill vers le dossier de travail si son contenu diffère. Le dossier de ce skill t'est indiqué au chargement ; remplace les deux chemins. La copie est récursive : elle emporte `jobsearch.js`, `vendor/` **et** `logo/`, sans quoi l'onglet CV ne peut pas afficher les PDF et les logos des sites manquent au dashboard.
+
+   La comparaison porte sur une **empreinte de l'arborescence entière**, pas sur le numéro de `VERSION`. C'est délibéré : deux fichiers portant le même numéro peuvent avoir un contenu différent, et une comparaison de numéros conclut alors qu'il n'y a rien à copier. L'utilisateur garde une interface périmée en croyant être à jour. L'empreinte couvre aussi `vendor/` et `logo/`, donc un fichier effacé par erreur revient tout seul.
+
+   ```bash
+   node -e "const fs=require('node:fs'),p=require('node:path'),c=require('node:crypto');const emp=d=>{const h=c.createHash('sha1');const w=rel=>{for(const e of fs.readdirSync(p.join(d,rel),{withFileTypes:true}).sort((a,b)=>a.name<b.name?-1:1)){const r=rel?rel+'/'+e.name:e.name;if(e.isDirectory())w(r);else{h.update(r);h.update(fs.readFileSync(p.join(d,r)))}}};try{w('')}catch{return null}return h.digest('hex').slice(0,12)};const V=f=>{try{return (fs.readFileSync(f,'utf8').match(/const VERSION = '([^']+)'/)||[])[1]||''}catch{return ''}};const [src,dst]=process.argv.slice(1);const want=emp(src);if(!want){console.error(JSON.stringify({ok:false,error:'dossier scripts introuvable : '+src}));process.exit(1)}const copied=emp(dst)!==want;if(copied){fs.mkdirSync(dst,{recursive:true});fs.cpSync(src,dst,{recursive:true})}console.log(JSON.stringify({ok:true,installed:V(p.join(src,'jobsearch.js')),previous:V(p.join(dst,'jobsearch.js')),copied,empreinte:want}))" "CHEMIN/DU/SKILL/scripts" "DOSSIER/DE/TRAVAIL"
    ```
 
    Si la commande échoue (dossier source absent), dis-le clairement avec le chemin attendu : sans lui le skill ne peut pas s'installer. Vérifie ensuite avec `node jobsearch.js version`.
@@ -82,7 +111,7 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
    node -e "fetch('http://127.0.0.1:3000/api/shutdown',{method:'POST',headers:{'Content-Type':'application/json'},body:'{\"confirm\":\"stop\"}'}).then(()=>console.log('ancien dashboard arrete')).catch(()=>console.log('aucun dashboard a arreter'))"
    ```
 
-3. **Playwright** : cherche dans ta liste d'outils un nom qui **se termine par** `__browser_navigate`. Le préfixe dépend du mode d'installation et les deux sont normaux :
+4. **Playwright** : cherche dans ta liste d'outils un nom qui **se termine par** `__browser_navigate`. Le préfixe dépend du mode d'installation et les deux sont normaux :
    - `mcp__plugin_recherche-emploi_playwright__` quand le skill est installé par plugin, Claude Code préfixant les serveurs MCP d'un plugin
    - `mcp__playwright__` quand le serveur a été ajouté à la main
 
@@ -92,11 +121,11 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
    Le navigateur doit rester visible (pas de `--headless`) : c'est plus fiable face aux protections anti-robot et l'utilisateur peut intervenir. Le profil persistant par défaut de Playwright MCP conserve les cookies entre les sessions.
 
-4. **Base** : `node jobsearch.js check`. La commande crée la base, applique les migrations si besoin et renvoie `schema_version`, `cv_dir`, `cvs`, `orphans`, `active_cv`, `offers`, `searches`, `letters`. Si une migration a eu lieu, le script écrit le chemin de la sauvegarde sur la sortie d'erreur : transmets-le à l'utilisateur en une ligne.
+5. **Base** : `node jobsearch.js check`. La commande crée la base, applique les migrations si besoin et renvoie `schema_version`, `cv_dir`, `cvs`, `orphans`, `active_cv`, `offers`, `searches`, `letters`. Si une migration a eu lieu, le script écrit le chemin de la sauvegarde sur la sortie d'erreur : transmets-le à l'utilisateur en une ligne.
 
-5. **Dashboard** : lance `node jobsearch.js serve 3000` en arrière-plan (Bash avec `run_in_background`). Le message "Port 3000 deja utilise" signifie qu'il tourne déjà, ce n'est pas une erreur. Donne le lien http://localhost:3000 à l'utilisateur.
+6. **Dashboard** : lance `node jobsearch.js serve 3000` en arrière-plan (Bash avec `run_in_background`). Le message "Port 3000 deja utilise" signifie qu'il tourne déjà, ce n'est pas une erreur. Donne le lien http://localhost:3000 à l'utilisateur.
 
-6. **Boutons du dashboard** : arme le watcher avec l'outil **`Monitor`**, pas avec Bash. Chaque ligne qu'il écrit devient une notification et c'est ce qui rend les boutons du dashboard cliquables.
+7. **Boutons du dashboard** : arme le watcher avec l'outil **`Monitor`**, pas avec Bash. Chaque ligne qu'il écrit devient une notification et c'est ce qui rend les boutons du dashboard cliquables.
 
    ```
    Monitor({
@@ -108,7 +137,7 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
    Dis à l'utilisateur que les boutons sont actifs tant que cette session reste ouverte. Le dashboard affiche « Claude écoute » en vert quand le watcher tourne, « Claude hors ligne » en gris sinon, et grise les boutons dans ce cas. Si un `Monitor` est déjà armé dans la session, ne le relance pas.
 
-7. **Sites jamais vérifiés** : `node jobsearch.js deps --pending`. La commande renvoie les seules cases que tu dois encore remplir toi-même, dont `sites`, la liste des sites d'emploi jamais testés.
+8. **Sites jamais vérifiés** : `node jobsearch.js deps --pending`. La commande renvoie les seules cases que tu dois encore remplir toi-même, dont `sites`, la liste des sites d'emploi jamais testés.
 
    **Si `sites` n'est pas vide, teste-les maintenant**, une bonne fois : c'est le seul moment où tu ouvres des pages sans que l'utilisateur l'ait demandé, et ça lui évite de découvrir au milieu d'une recherche qu'un site le bloque. Préviens-le en une ligne avant de commencer (« je vérifie l'accès aux N sites, une trentaine de secondes »), utilise les URL du tableau de vérification plus bas, réponds par `set-dep` pour chacun, et résume en une ligne : les sites accessibles, ceux qui bloquent et pourquoi.
 
@@ -116,7 +145,7 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
    Deux garde-fous. Si Playwright est en `ko`, saute complètement ce point et laisse les sites en `unknown` : sans navigateur il n'y a rien à tester. Et si l'utilisateur t'a déjà dit ce qu'il cherchait et sur quels sites, teste seulement ceux-là, les autres attendront.
 
-8. **Tu t'arrêtes.** L'étape 2 ci-dessous (importer les CV qui ont changé) est du travail, pas une question : fais-la sans demander. Ensuite, rends la main avec quelques lignes :
+9. **Tu t'arrêtes.** L'étape 2 ci-dessous (importer les CV qui ont changé) est du travail, pas une question : fais-la sans demander. Ensuite, rends la main avec quelques lignes :
 
    > Le dashboard est ouvert : http://localhost:3000
    > Tout se lance depuis là. « Lancer une recherche » ouvre le formulaire avec le poste, le lieu, les sites, et les filtres : mots-clés à éviter, salaire minimum, score minimum, distance maximale. L'onglet CV porte « Analyser ce CV » et « Auditer pour les ATS », et chaque offre a son bouton de lettre de motivation.
@@ -387,7 +416,7 @@ Laisse `serve` et le watcher tourner, ils sont faits pour ça.
 
 ## Actions du dashboard
 
-Le watcher armé à l'étape 1.6 émet une ligne JSON par bouton cliqué, du type :
+Le watcher armé à l'étape 1.7 émet une ligne JSON par bouton cliqué, du type :
 
 ```json
 {"action": 7, "type": "new-search", "payload": {"title": "...", "location": "...", "target_count": 10,
@@ -479,7 +508,7 @@ Le serveur calcule tout seul Node, le script, la base, PDF.js, le dossier `cv/`,
 
 | `name` | Comment tu le vérifies |
 | --- | --- |
-| `playwright` | Un outil dont le nom finit par `__browser_navigate` est-il dans ta liste ? Peu importe le préfixe, voir l'étape 3 du démarrage. Mets le préfixe trouvé dans `detail` |
+| `playwright` | Un outil dont le nom finit par `__browser_navigate` est-il dans ta liste ? Peu importe le préfixe, voir l'étape 4 du démarrage. Mets le préfixe trouvé dans `detail` |
 | `hellowork` | Ouvre `https://www.hellowork.com/fr-fr/emploi/recherche.html?k=test&l=Paris` avec Playwright |
 | `indeed` | Ouvre `https://fr.indeed.com/jobs?q=test&l=Paris` avec Playwright |
 | `france_travail` | Ouvre `https://candidat.francetravail.fr/offres/recherche?motsCles=test` avec Playwright |
@@ -494,7 +523,7 @@ Pour tous ces sites, la question est « puis-je lire des annonces », pas « sui
 
 Chacun de ces tests ouvre vraiment le navigateur. Deux moments seulement les déclenchent :
 
-- **au tout premier lancement**, pour les sites jamais testés, voir le point 7 de l'étape 1 ;
+- **au tout premier lancement**, pour les sites jamais testés, voir le point 8 de l'étape 1 ;
 - **sur demande**, quand l'utilisateur clique « Revérifier les dépendances » ou te le demande. Là il a choisi d'attendre, donc reteste tout ce qui est concerné.
 
 En dehors de ces deux cas, ne recharge jamais un site juste pour remplir une case. Si Playwright est en `ko`, ne les tente pas du tout. Si l'utilisateur vient de lancer une recherche, sers-toi de ce que tu as constaté pendant cette recherche plutôt que de recharger les sites pour rien.

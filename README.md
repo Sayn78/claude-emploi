@@ -104,6 +104,12 @@ Sous Windows, `%USERPROFILE%\.claude\skills\` remplace `~/.claude/skills/`.
 
 ## Mettre à jour
 
+### Le skill s'en charge
+
+Depuis la 2.15.0, `recherche-emploi` regarde au démarrage si une version plus récente est publiée. Si oui, il l'installe et vous le dit, puis continue sur la version en cours - la nouvelle prendra effet au prochain démarrage de Claude Code. Rien à activer, et rien à faire si vous êtes hors ligne : le contrôle échoue en silence et le démarrage continue.
+
+Il ne touche qu'à ce plugin. Les deux sections ci-dessous restent valables pour `audit-cv-ats` et pour reprendre la main.
+
 ### Être prévenu automatiquement
 
 Claude Code n'active pas les mises à jour automatiques pour les marketplaces tiers comme celui-ci. À activer une fois, sinon vous resterez sur la version installée le premier jour :

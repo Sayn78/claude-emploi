@@ -10,6 +10,16 @@ Les numéros suivent [semver](https://semver.org/lang/fr/) : le chiffre du milie
 
 ## recherche-emploi
 
+### 2.15.0 - 2026-10-05
+
+Le skill vérifie lui-même qu'il est à jour, et ne se fie plus à un numéro de version pour savoir quoi copier.
+
+Deux manières de rester sans le savoir sur une version périmée sont corrigées ici. Les mises à jour automatiques du marketplace sont désactivées par défaut pour les sources tierces, donc une installation faite un jour pouvait y rester des mois. Et la copie du script vers le dossier de travail comparait les numéros de `VERSION` : deux fichiers portant le même numéro avec un contenu différent passaient pour identiques, et l'interface restait périmée alors que tout annonçait la bonne version.
+
+- **Contrôle de version au démarrage.** Le skill lit le catalogue publié sur GitHub et le compare à la version installée. Si une version plus récente existe, il lance `claude plugin marketplace update` puis `claude plugin update`, vous dit ce qu'il a fait et continue : la session en cours tourne sur l'ancienne version, ce qui ne gêne rien, et la nouvelle prendra effet au prochain démarrage de Claude Code. Rien à activer.
+- **Le contrôle ne bloque jamais.** Machine hors ligne, proxy d'entreprise, dépôt injoignable : il échoue en silence en moins de quatre secondes et le démarrage continue. Une installation manuelle dans `~/.claude/skills/` le saute entièrement, il n'y a pas de plugin à mettre à jour.
+- **La copie vers le dossier de travail compare le contenu**, par une empreinte de l'arborescence `scripts/` entière, numéro de version ignoré. Un fichier de `vendor/` ou de `logo/` effacé par erreur revient donc tout seul, ce qu'une comparaison de numéros ne voyait pas non plus.
+
 ### 2.14.0 - 2026-10-05
 
 Le dashboard devient le point de départ, et le formulaire de recherche gagne quatre filtres.
