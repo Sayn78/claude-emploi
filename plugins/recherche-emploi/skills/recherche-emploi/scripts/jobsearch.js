@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // jobsearch.js : base SQLite + CLI + dashboard local. Aucune dependance npm (Node >= 22.13).
 'use strict';
-const VERSION = '2.13.0';
+const VERSION = '2.14.0';
 const _emit = process.emitWarning;
 process.emitWarning = (w, ...a) => { if (String(w).includes('SQLite')) return; _emit.call(process, w, ...a); };
 const fs = require('node:fs');
@@ -16,7 +16,7 @@ const VENDOR_DIR = path.join(ROOT, 'vendor');
 const LOGO_DIR = path.join(ROOT, 'logo');
 const DB_PATH = path.join(DATA_DIR, 'jobsearch.db');
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 const RECOS = ['postuler', 'a_etudier', 'ne_pas_postuler'];
 const KANBAN = ['a_postuler', 'postulee', 'entretien', 'refus', 'accepte'];
 const APPLIED = ['postulee', 'entretien', 'refus', 'accepte'];
@@ -32,6 +32,14 @@ const SITE_ALIAS = { les_deux: 'hellowork,indeed' };
 // Types de contrat proposes a la recherche. 'tous' = pas de filtre, et c'est
 // le defaut : mieux vaut ne rien filtrer que filtrer a l'envers.
 const CONTRATS = ['tous', 'cdi', 'cdd', 'alternance', 'stage', 'interim', 'temps_partiel', 'freelance'];
+// Base de comparaison du salaire minimum. Une annonce affiche ce qu'elle veut
+// ("32 k€ brut/an", "2 100 € net", "450 € / jour") : c'est a la lecture qu'on
+// ramene l'annonce a la base demandee ici, le script ne devine rien.
+const SALAIRE_BASES = ['brut_annuel', 'brut_mensuel', 'net_annuel', 'net_mensuel',
+  'brut_horaire', 'net_horaire', 'tjm'];
+// Seuil de score par defaut. Surchargeable par recherche (searches.min_score) :
+// c'est la seule porte d'entree d'une offre en base, add-offer la fait respecter.
+const MIN_SCORE_DEFAUT = 50;
 // Actions declenchables par un bouton du dashboard. Le watcher les emet sur
 // stdout, l'outil Monitor de Claude Code transforme chaque ligne en notification.
 const ACTIONS = ['check-deps', 'scan-cv', 'analyze-cv', 'audit-cv', 'new-search', 'letter', 'letters-missing', 'message', 'answer'];
@@ -107,7 +115,9 @@ CREATE TABLE IF NOT EXISTS searches (
   id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, location TEXT NOT NULL, site TEXT NOT NULL,
   target_count INTEGER, offers_seen INTEGER DEFAULT 0, started_at TEXT NOT NULL, finished_at TEXT, notes TEXT,
   cv_id INTEGER REFERENCES cv(id) ON DELETE SET NULL, stats_json TEXT, max_seen INTEGER,
-  contract_wanted TEXT);                 -- voir migration 9
+  contract_wanted TEXT,                  -- voir migration 9
+  exclude_keywords TEXT, salary_min INTEGER, salary_base TEXT,
+  min_score INTEGER, max_distance_km INTEGER);   -- voir migration 10
 CREATE TABLE IF NOT EXISTS offers (
   id INTEGER PRIMARY KEY AUTOINCREMENT, search_id INTEGER REFERENCES searches(id), site TEXT, url TEXT NOT NULL UNIQUE,
   title TEXT NOT NULL, company TEXT, location TEXT, contract TEXT, salary TEXT, remote TEXT, posted_at TEXT,
@@ -279,6 +289,18 @@ const MIGRATIONS = [
     const cols = db.prepare('PRAGMA table_info(searches)').all().map((c) => c.name);
     if (!cols.includes('contract_wanted')) db.exec('ALTER TABLE searches ADD COLUMN contract_wanted TEXT');
   } },
+  { v: 10, name: 'filtres de recherche (mots a eviter, salaire, score, distance)', up(db) {
+    // Cinq colonnes neuves, laissees a NULL sur les recherches passees : elles
+    // ont tourne sans ces filtres, autant que ca se voie dans l'historique.
+    // Seul min_score est retro-rempli, parce que le seuil de 50 existait deja
+    // en dur dans la grille de notation : l'ecrire ne change rien au passe.
+    addCol(db, 'searches', 'exclude_keywords', 'exclude_keywords TEXT');
+    addCol(db, 'searches', 'salary_min', 'salary_min INTEGER');
+    addCol(db, 'searches', 'salary_base', 'salary_base TEXT');
+    addCol(db, 'searches', 'min_score', 'min_score INTEGER');
+    addCol(db, 'searches', 'max_distance_km', 'max_distance_km INTEGER');
+    db.prepare('UPDATE searches SET min_score = ? WHERE min_score IS NULL').run(MIN_SCORE_DEFAUT);
+  } },
 ];
 
 let LAST_BACKUP = null;
@@ -370,6 +392,35 @@ function normalizeSites(v) {
   }
   if (!keys.length) fail('site est requis : ' + SITES.join(' | '));
   return keys.join(',');
+}
+// Minuscules sans accents : "Expérimenté" et "experimente" doivent se reconnaitre.
+// L'utilisateur tape ses mots a eviter a la main, il n'a pas a soigner sa frappe.
+const plat = (v) => String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+// Mots-cles a eviter : saisis dans le dashboard ou passes a start-search, en
+// tableau ou en liste separee par des virgules. Stockes un par ligne, comme
+// strengths et gaps. Doublons et casse d'origine ecartes, l'ordre est conserve.
+function parseExclude(v) {
+  const parts = Array.isArray(v) ? v : String(v == null ? '' : v).split(/[,;\n]/);
+  const vus = new Set(), mots = [];
+  for (const p of parts) {
+    const mot = String(p == null ? '' : p).trim();
+    if (!mot || mot.length > 60) continue;
+    const cle = plat(mot);
+    if (vus.has(cle)) continue;
+    vus.add(cle);
+    mots.push(mot);
+  }
+  return mots.slice(0, 40);
+}
+const excludeList = (v) => String(v == null ? '' : v).split('\n').map((s) => s.trim()).filter(Boolean);
+// Un mot a eviter doit matcher sur un mot entier : "senior" ne doit pas se
+// declencher sur "seniorite" ni "cadre" sur "encadrement". Une expression de
+// plusieurs mots ("tres experimente") est cherchee telle quelle.
+function motTrouve(mot, texte) {
+  const m = plat(mot).replace(/\s+/g, ' ').trim();
+  if (!m) return false;
+  const t = ' ' + plat(texte).replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+  return t.includes(' ' + m.replace(/[^a-z0-9]+/g, ' ') + ' ');
 }
 const listText = (v) => Array.isArray(v) ? v.join('\n') : (v == null ? null : String(v));
 const cvFiles = () => fs.existsSync(CV_DIR) ? fs.readdirSync(CV_DIR).filter((f) => /\.pdf$/i.test(f)).sort() : [];
@@ -768,12 +819,47 @@ const commands = {
     if (target && maxSeen < target) fail('max_seen (' + maxSeen + ') est inferieur a target_count (' + target + ') : impossible d\'enregistrer plus d\'offres que d\'annonces lues');
     const contrat = String(d.contract_wanted || 'tous').trim().toLowerCase();
     if (!CONTRATS.includes(contrat)) fail('contract_wanted doit valoir : ' + CONTRATS.join(' | '));
+    // Les quatre filtres de tri. Tous facultatifs, et un filtre absent reste a
+    // NULL plutot que de prendre une valeur neutre : l'historique doit montrer
+    // qu'il n'a pas servi, pas qu'il valait zero.
+    const exclure = parseExclude(d.exclude_keywords);
+    const salMin = d.salary_min == null || d.salary_min === '' ? null : Math.round(Number(d.salary_min));
+    if (salMin != null && !(salMin > 0)) fail('salary_min doit etre un nombre positif');
+    let salBase = d.salary_base == null ? null : String(d.salary_base).trim().toLowerCase() || null;
+    if (salMin != null && !salBase) salBase = 'brut_annuel';
+    if (salBase && !SALAIRE_BASES.includes(salBase)) fail('salary_base doit valoir : ' + SALAIRE_BASES.join(' | '));
+    if (salBase && salMin == null) salBase = null;      // une base sans montant ne filtre rien
+    const minScore = d.min_score == null || d.min_score === '' ? MIN_SCORE_DEFAUT : Math.round(Number(d.min_score));
+    if (!(minScore >= 0 && minScore <= 100)) fail('min_score doit etre entre 0 et 100');
+    const distMax = d.max_distance_km == null || d.max_distance_km === '' ? null : Math.round(Number(d.max_distance_km));
+    if (distMax != null && !(distMax > 0)) fail('max_distance_km doit etre un nombre positif');
     const cv = findCv(db, d.cv_id);
-    const r = db.prepare('INSERT INTO searches (title, location, site, target_count, max_seen, cv_id, started_at, contract_wanted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(d.title, d.location, sites, target, maxSeen, cv ? cv.id : null, now(), contrat);
+    const r = db.prepare(`INSERT INTO searches (title, location, site, target_count, max_seen, cv_id, started_at,
+        contract_wanted, exclude_keywords, salary_min, salary_base, min_score, max_distance_km)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(d.title, d.location, sites, target, maxSeen, cv ? cv.id : null, now(), contrat,
+        exclure.length ? exclure.join('\n') : null, salMin, salBase, minScore, distMax);
     out({ ok: true, search_id: Number(r.lastInsertRowid), target_count: target, max_seen: maxSeen,
       site: sites, sites: sites.split(','),
-      contract_wanted: contrat, cv_id: cv ? cv.id : null, cv_filename: cv ? cv.filename : null });
+      contract_wanted: contrat, exclude_keywords: exclure, salary_min: salMin, salary_base: salBase,
+      min_score: minScore, max_distance_km: distMax,
+      cv_id: cv ? cv.id : null, cv_filename: cv ? cv.filename : null });
+  },
+
+  // Relit une recherche et ses filtres. Utile en reprenant une recherche en
+  // cours, ou pour reciter a l'utilisateur ce sur quoi il a lance Claude.
+  'get-search'(args) {
+    const db = openDb();
+    const id = args[0] ? Number(args[0]) : null;
+    const s = id
+      ? db.prepare('SELECT s.*, c.filename AS cv_filename FROM searches s LEFT JOIN cv c ON c.id = s.cv_id WHERE s.id = ?').get(id)
+      : db.prepare('SELECT s.*, c.filename AS cv_filename FROM searches s LEFT JOIN cv c ON c.id = s.cv_id ORDER BY s.id DESC LIMIT 1').get();
+    if (!s) fail(id ? 'Recherche introuvable : ' + id : 'Aucune recherche en base');
+    let stats = null; try { stats = s.stats_json ? JSON.parse(s.stats_json) : null; } catch {}
+    const { stats_json, exclude_keywords, ...rest } = s;
+    out({ ok: true, search: { ...rest, exclude_keywords: excludeList(exclude_keywords), stats,
+      sites: String(s.site || '').split(',').filter(Boolean),
+      offers_saved: db.prepare('SELECT COUNT(*) n FROM offers WHERE search_id = ?').get(s.id).n } });
   },
 
   'update-search'(args) {
@@ -792,7 +878,13 @@ const commands = {
     out({ ok: true, search_id: s.id, offers_seen: seen, max_seen: s.max_seen,
       budget_restant: s.max_seen == null ? null : Math.max(0, s.max_seen - seen),
       offers_saved: saved, target_count: s.target_count,
-      offres_restantes: s.target_count == null ? null : Math.max(0, s.target_count - saved), stats });
+      offres_restantes: s.target_count == null ? null : Math.max(0, s.target_count - saved),
+      // Rappeles a chaque point d'etape : sur une recherche longue, les filtres
+      // saisis au depart sont loin dans le contexte.
+      filtres: { contract_wanted: s.contract_wanted, exclude_keywords: excludeList(s.exclude_keywords),
+        salary_min: s.salary_min, salary_base: s.salary_base,
+        min_score: s.min_score, max_distance_km: s.max_distance_km },
+      stats });
   },
 
   'finish-search'(args) {
@@ -845,6 +937,20 @@ const commands = {
     const cv = findCv(db, d.cv_id);
     const status = STATUS_ALIAS[d.status] || d.status || 'a_postuler';
     if (!STATUSES.includes(status)) fail('status doit valoir : ' + STATUSES.join(' | '));
+    // Garde-fous de la recherche. Le score minimum et les mots a eviter sont les
+    // deux filtres que le script peut verifier seul, donc il les verifie : une
+    // offre sous le seuil ou dont l'intitule porte un mot banni n'entre pas en
+    // base. Le salaire et la distance restent a la lecture, ils demandent
+    // d'interpreter un texte libre. `--force` passe outre, sciemment.
+    const s = d.search_id ? db.prepare('SELECT min_score, exclude_keywords FROM searches WHERE id = ?').get(Number(d.search_id)) : null;
+    if (!args.includes('--force')) {
+      const seuil = s && s.min_score != null ? s.min_score : MIN_SCORE_DEFAUT;
+      if (score < seuil) fail('score ' + score + ' sous le seuil de la recherche (' + seuil +
+        ') : offre non enregistree. Compte-la comme lue, ou relance avec --force si le seuil ne doit pas s\'appliquer ici');
+      const banni = excludeList(s && s.exclude_keywords).find((m) => motTrouve(m, d.title));
+      if (banni) fail('l\'intitule contient un mot a eviter de cette recherche (' + banni +
+        ') : offre non enregistree. Compte-la comme lue, ou relance avec --force si le mot est ici hors sujet');
+    }
     const t = now();
     db.prepare(`INSERT INTO offers (search_id, site, url, title, company, location, contract, salary, remote, posted_at,
         description, match_score, strengths, gaps, recommendation, advice, status, found_at, cv_id, status_updated_at)
@@ -1215,8 +1321,8 @@ function serve(port) {
             (SELECT COUNT(*) FROM offers o WHERE o.search_id = s.id) AS offers_saved
           FROM searches s LEFT JOIN cv c ON c.id = s.cv_id ORDER BY s.id DESC`).all().map((r) => {
             let stats = null; try { stats = r.stats_json ? JSON.parse(r.stats_json) : null; } catch {}
-            const { stats_json, ...rest } = r;
-            return { ...rest, stats };
+            const { stats_json, exclude_keywords, ...rest } = r;
+            return { ...rest, exclude_keywords: excludeList(exclude_keywords), stats };
           });
         return json(res, 200, {
           version: VERSION,
@@ -1472,15 +1578,45 @@ body.resizing{cursor:col-resize;user-select:none}
  transition:transform var(--t),border-color var(--t)}
 .sw:hover{transform:scale(1.14)}
 .sw.on{border-color:var(--fg);transform:scale(1.1)}
+/* overflow:auto est indispensable : le formulaire de recherche depasse la
+   hauteur de l'ecran sur un portable, et body est en overflow:hidden. Sans ca
+   le bouton Lancer devient inatteignable. */
 #modal{position:fixed;inset:0;background:rgba(8,11,18,.5);backdrop-filter:blur(3px);display:none;
- align-items:flex-start;justify-content:center;z-index:40;padding:8vh 16px}
+ align-items:flex-start;justify-content:center;z-index:40;padding:28px 16px;overflow:auto;
+ overscroll-behavior:contain}
 body.modal-open #modal{display:flex;animation:fade .18s ease}
 @keyframes fade{from{opacity:0}to{opacity:1}}
+/* Large par defaut : le formulaire de recherche tient en deux colonnes cote a
+   cote, ce qui lui evite de devenir une colonne a faire defiler. Les autres
+   boites du modal restent etroites, elles n'ont que deux ou trois champs. */
 #modalbox{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;
  width:min(460px,100%);box-shadow:var(--sh3);animation:rise .22s cubic-bezier(.34,1.2,.64,1)}
+#modalbox.large{width:min(900px,100%)}
 @keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
-#modalbox label{display:block;margin:12px 0 0;font-size:13px;color:var(--mut)}
+#modalbox label{display:block;margin:10px 0 0;font-size:13px;color:var(--mut)}
 #modalbox input,#modalbox select{width:100%;margin-top:4px}
+/* Les deux colonnes s'alignent en haut : la gauche est plus courte que la
+   droite, les etirer ferait flotter les champs au milieu du vide. */
+#modalbox .grille{display:grid;grid-template-columns:1fr 1fr;gap:0 30px;align-items:start}
+#modalbox .colonne{min-width:0}
+#modalbox .colonne>label:first-of-type{margin-top:6px}
+/* En dessous, deux colonnes deviennent deux colonnes trop etroites : on
+   repasse en pile, et la boite reprend sa largeur de lecture. */
+@media(max-width:880px){
+ #modalbox.large{width:min(460px,100%)}
+ #modalbox .grille{grid-template-columns:1fr}
+ /* Empilees, les deux colonnes se touchent : le titre de la seconde reprend le
+    filet horizontal que la disposition en colonnes rendait inutile. */
+ #modalbox .colonne+.colonne .tete{margin-top:20px;padding-top:15px;border-top:1px solid var(--line)}
+}
+#modalbox .tete{margin:0;font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+ color:var(--mut);font-weight:600}
+/* Un champ qui ne se change pas : meme gabarit qu'un select, pour que la
+   colonne garde son rythme quand il n'y a qu'un seul CV. */
+#modalbox .fige{margin-top:4px;padding:7px 11px;border:1px solid var(--line);border-radius:var(--r2);
+ background:var(--bg);color:var(--mut);font-size:14px;line-height:1.4;
+ overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#modalbox hr{border:0;border-top:1px solid var(--line);margin:16px 0 14px}
 /* Les sites se choisissent par pastilles a bascule, pas par cases a cocher :
    une pastille eteinte reste neutre, une pastille choisie prend la couleur
    d'accent. Les boutons echappent au width:100% des champs ci-dessus. */
@@ -1511,6 +1647,38 @@ body.modal-open #modal{display:flex;animation:fade .18s ease}
  display:inline-block;position:relative;flex:none}
 #modalbox .sites .tous[aria-pressed=true] i{background:currentColor}
 #modalbox .sites .tous.mi i{background:currentColor;box-shadow:inset 0 0 0 4px var(--card)}
+/* Deux champs cote a cote : un montant et son unite, une distance et son "km".
+   grid plutot que flex pour imposer le partage de largeur sans calcul. */
+#modalbox .duo{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;margin-top:4px}
+#modalbox .duo>*{margin-top:0}
+#modalbox .duo select{width:auto;min-width:138px}
+#modalbox .duo .unite{align-self:center;font-size:13px;color:var(--mut)}
+/* Mots a eviter : des puces supprimables, pas une liste a virgules a relire.
+   Le champ de saisie vit dans la meme boite et grandit pour prendre la place
+   restante, comme un champ de destinataires d'e-mail. */
+#modalbox .mots{margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px;
+ border:1px solid var(--line);border-radius:var(--r2);background:var(--bg);
+ transition:border-color var(--t),box-shadow var(--t)}
+#modalbox .mots:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px var(--ring)}
+#modalbox .mots input{width:auto;margin:0;flex:1 1 130px;min-width:110px;border:0;background:none;
+ padding:3px 2px;color:var(--fg);font:inherit;font-size:14px}
+#modalbox .mots input:focus{outline:0}
+#modalbox .mots .mot{display:inline-flex;align-items:center;gap:5px;flex:none;
+ padding:3px 6px 3px 10px;border-radius:999px;font-size:13px;line-height:1.3;
+ border:1px solid color-mix(in srgb,var(--ko) 35%,var(--line));color:var(--ko);
+ background:color-mix(in srgb,var(--ko) 10%,var(--card))}
+#modalbox .mots .mot button{width:auto;margin:0;flex:none;border:0;background:none;cursor:pointer;
+ color:inherit;font:inherit;font-size:15px;line-height:1;padding:0 2px;opacity:.65;
+ transition:opacity var(--t)}
+#modalbox .mots .mot button:hover{opacity:1}
+/* Suggestions : un clic les verse dans les puces. Elles disparaissent une fois
+   toutes prises, la ligne ne reste pas vide a l'ecran. */
+#modalbox .sugg{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#modalbox .sugg span{font-size:12px;color:var(--mut);opacity:.85}
+#modalbox .sugg button{width:auto;margin:0;flex:none;cursor:pointer;font:inherit;font-size:12.5px;
+ padding:3px 10px;border-radius:999px;border:1px dashed var(--line);background:none;color:var(--mut);
+ transition:border-color var(--t),color var(--t)}
+#modalbox .sugg button:hover{border-style:solid;border-color:var(--acc);color:var(--fg)}
 /* Logos des sites. Les deux variantes sont dans le DOM, seule celle du theme
    courant s'affiche : rien a rejouer en JS quand on bascule clair/sombre, et le
    mode auto suit la preference systeme sans code. */
@@ -1825,6 +1993,23 @@ var CONTRAT=[['tous','Tous les contrats'],['cdi','CDI'],['cdd','CDD'],['alternan
              ['stage','Stage'],['interim','Interim'],['temps_partiel','Temps partiel'],['freelance','Freelance']];
 var CONTRAT_NOM={};CONTRAT.forEach(function(x){CONTRAT_NOM[x[0]]=x[1];});
 function nomContrat(v){return v?(CONTRAT_NOM[v]||v):'';}
+// Base de comparaison du salaire minimum. Un montant sans base ne veut rien
+// dire : 2000 est un bon salaire mensuel et un salaire annuel impossible.
+var SAL_BASE=[['brut_annuel','Brut annuel'],['brut_mensuel','Brut mensuel'],
+              ['net_annuel','Net annuel'],['net_mensuel','Net mensuel'],
+              ['brut_horaire','Brut horaire'],['net_horaire','Net horaire'],
+              ['tjm','TJM (par jour)']];
+var SAL_BASE_NOM={};SAL_BASE.forEach(function(x){SAL_BASE_NOM[x[0]]=x[1];});
+function nomBase(v){return v?(SAL_BASE_NOM[v]||v):'';}
+// L'ordre de grandeur attendu change du tout au tout d'une base a l'autre : le
+// repere evite de taper 2400 en pensant au mois sur un champ annuel.
+var SAL_EX={brut_annuel:'ex. 32000',brut_mensuel:'ex. 2400',net_annuel:'ex. 26000',
+            net_mensuel:'ex. 1900',brut_horaire:'ex. 15',net_horaire:'ex. 12',tjm:'ex. 450'};
+// Mots a eviter les plus demandes, proposes en un clic. Ce ne sont que des
+// raccourcis : tout mot tape a la main vaut autant.
+// Six, pas douze : la ligne de suggestions passerait sur trois rangs sur un
+// formulaire neuf, et c'est la hauteur qui manque, pas les idees.
+var MOTS_SUGG=['senior','expérimenté','confirmé','expert','manager','bac+5'];
 // Reconnait le contrat d'une annonce a partir de son texte libre : les sites
 // ecrivent "CDI", "C.D.I.", "Contrat a duree indeterminee", "Alternance"...
 // Aucune contre-oblique dans ce bloc : PAGE est un litteral gabarit, et une
@@ -2009,12 +2194,29 @@ function guessVille(p,lastS){
  return m?(m[2].trim()+' '+m[1]):v;
 }
 function searchForm(){
- var cv=(S.cvs||[]).filter(function(c){return c.is_active;})[0]||(S.cvs||[])[0]||null;
- var p=cv?(cv.profile||{}):{};
+ // Seuls les CV analyses sont proposables : un PDF depose mais jamais importe
+ // n'a pas de profil, donc rien a comparer aux annonces.
+ var cvs=(S.cvs||[]).filter(function(c){return c.id!=null;});
+ var cv=cvs.filter(function(c){return c.is_active;})[0]||cvs[0]||null;
  var lastS=(S.searches||[])[0]||{};
  var box=document.getElementById('modalbox');box.replaceChildren();
+ box.classList.add('large');
  box.appendChild(h('h2',{text:'Lancer une recherche'}));
- box.appendChild(h('div',{class:'mut',style:'font-size:13px',text:cv?('CV utilise : '+cv.filename):'Aucun CV en base'}));
+ // Changer de CV ici recalcule le poste et la ville proposes : ils viennent du
+ // profil, et garder ceux du CV precedent n'aurait aucun sens.
+ var cvSel=null;
+ if(cvs.length>1){
+  cvSel=sel(cvs.map(function(c){
+   var t=((c.profile||{}).headline||'').split(/\\s+[-\\/|]\\s+/)[0].trim();
+   return [String(c.id),c.filename+(t?' - '+t:'')];
+  }),String(cv.id),function(v){
+   cv=cvs.filter(function(c){return String(c.id)===String(v);})[0]||cv;
+   var np=cv.profile||{};
+   poste.value=guessPoste(np,lastS);
+   ville.value=guessVille(np,lastS);
+  });
+ }
+ var p=cv?(cv.profile||{}):{};
  var poste=h('input',{value:guessPoste(p,lastS)});
  var ville=h('input',{value:guessVille(p,lastS),placeholder:'Ville et code postal'});
  var obj=sel([['5','5 offres'],['10','10 offres'],['15','15 offres']],String(lastS.target_count||10),function(){majPlaf();});
@@ -2074,32 +2276,139 @@ function searchForm(){
  });
  majTous();
  var contrat=sel(CONTRAT,lastS.contract_wanted||'tous',function(){});
- [['Poste recherche',poste,null],
+ // ---- mots a eviter : des puces supprimables, pas une liste a virgules ----
+ // La frappe se termine par Entree, une virgule ou un point-virgule, et le
+ // champ se vide a chaque mot pose. Retour arriere sur un champ vide retire la
+ // derniere puce, comme dans un champ de destinataires.
+ var mots=(lastS.exclude_keywords||[]).slice(0,40);
+ var motsBox=h('div',{class:'mots'});
+ var motsSugg=h('div',{class:'sugg'});
+ var motIn=h('input',{type:'text','aria-label':'Mot ou expression a eviter',
+  placeholder:mots.length?'un autre mot...':'senior, expérimenté...'});
+ function memeMot(a,b){return String(a).trim().toLowerCase()===String(b).trim().toLowerCase();}
+ function ajouteMots(txt){
+  String(txt==null?'':txt).split(/[,;]/).forEach(function(p){
+   var m=p.trim();
+   if(!m||m.length>60||mots.length>=40)return;
+   if(mots.some(function(x){return memeMot(x,m);}))return;
+   mots.push(m);
+  });
+  majMots();
+ }
+ function majMots(){
+  motsBox.replaceChildren();
+  mots.forEach(function(m,i){
+   motsBox.appendChild(h('span',{class:'mot'},h('i',{text:m}),
+    h('button',{type:'button',title:'Retirer '+m,'aria-label':'Retirer '+m,text:'×',
+     onclick:function(){mots.splice(i,1);majMots();motIn.focus();}})));
+  });
+  motIn.placeholder=mots.length?'un autre mot...':'senior, expérimenté...';
+  motsBox.appendChild(motIn);
+  motsSugg.replaceChildren();
+  var reste=MOTS_SUGG.filter(function(m){return !mots.some(function(x){return memeMot(x,m);});});
+  if(!reste.length)return;
+  motsSugg.appendChild(h('span',{text:'Courants :'}));
+  // Le clic detruit la pastille cliquee (majMots reconstruit la ligne) : sans
+  // ce focus, le navigateur le pose sur la pastille voisine, qui s'allume sans
+  // avoir ete choisie. On rend la main au champ de saisie.
+  reste.forEach(function(m){motsSugg.appendChild(h('button',{type:'button',text:m,
+   onclick:function(){ajouteMots(m);motIn.focus();}}));});
+ }
+ motIn.addEventListener('keydown',function(e){
+  if(e.key==='Enter'||e.key===','||e.key===';'){e.preventDefault();ajouteMots(motIn.value);motIn.value='';}
+  else if(e.key==='Backspace'&&!motIn.value&&mots.length){mots.pop();majMots();motIn.focus();}
+ });
+ motIn.addEventListener('blur',function(){if(motIn.value.trim()){ajouteMots(motIn.value);motIn.value='';}});
+ motsBox.addEventListener('click',function(e){if(e.target===motsBox)motIn.focus();});
+ majMots();
+ // ---- salaire minimum : un montant et sa base ----
+ // Montant vide = pas de filtre. La base ne part donc pas seule.
+ var salMin=h('input',{type:'number',min:'0',step:'100',inputmode:'numeric',
+  value:lastS.salary_min!=null?String(lastS.salary_min):''});
+ var salBase=sel(SAL_BASE,lastS.salary_base||'brut_annuel',function(v){salMin.placeholder=SAL_EX[v]||'';});
+ salMin.placeholder=SAL_EX[salBase.value]||'';
+ var salDuo=h('div',{class:'duo'},salMin,salBase);
+ // ---- score minimum ----
+ var scoreMin=h('input',{type:'number',min:'0',max:'100',step:'5',inputmode:'numeric',
+  value:String(lastS.min_score!=null?lastS.min_score:50)});
+ var scoreDuo=h('div',{class:'duo'},scoreMin,h('span',{class:'unite',text:'/ 100'}));
+ // ---- distance maximale ----
+ var dist=h('input',{type:'number',min:'1',step:'5',inputmode:'numeric',placeholder:'sans limite',
+  value:lastS.max_distance_km!=null?String(lastS.max_distance_km):''});
+ var distDuo=h('div',{class:'duo'},dist,h('span',{class:'unite',text:'km'}));
+ // Deux colonnes cote a cote : ce qu'on cherche a gauche, ce qui fait ecarter
+ // a droite. Empilees, les dix champs obligeaient a faire defiler le modal.
+ // Les sites passent en pleine largeur dessous : leurs pastilles tiennent sur
+ // une ligne la, et sur trois dans une demi-colonne.
+ function champs(cible,liste){
+  liste.forEach(function(x){
+   cible.appendChild(h('label',{text:x[0]}));
+   cible.appendChild(x[1]);
+   if(x[3])cible.appendChild(x[3]);
+   if(x[2])cible.appendChild(h('div',{class:'aide',text:x[2]}));
+  });
+ }
+ var colG=h('div',{class:'colonne'}),colD=h('div',{class:'colonne'});
+ colG.appendChild(h('div',{class:'tete',text:'La recherche'}));
+ champs(colG,[
+  ['CV a utiliser',cvSel||h('div',{class:'fige',
+    text:cv?cv.filename:'Aucun CV analyse - depose un PDF dans cv/ puis relis les CV'}),
+   cvSel?'Il devient aussi le CV actif du dashboard.':null],
+  ['Poste recherche',poste,null],
   ['Ou (ville + code postal)',ville,null],
   ['Type de contrat',contrat,null],
   ['Objectif : offres a garder',obj,'Claude s\\'arrete des qu\\'il en a trouve autant.'],
   ['Plafond : annonces a lire au maximum',plaf,
-   'Plafond global, tous sites confondus : c\\'est ce qui limite le temps passe. Il est ensuite partage entre les sites choisis.'],
-  ['Sites a parcourir',site,
-   'Le plafond ci-dessus est divise entre les sites choisis, et ce qu\\'un site n\\'a pas consomme profite au suivant.']
- ].forEach(function(x){
-   box.appendChild(h('label',{text:x[0]}));
-   box.appendChild(x[1]);
-   if(x[2])box.appendChild(h('div',{class:'aide',text:x[2]}));
-  });
+   'Global, tous sites confondus. C\\'est ce qui limite le temps.']
+ ]);
+ colD.appendChild(h('div',{class:'tete',text:'Ce qui fait ecarter une offre'}));
+ // Ces aides tiennent volontairement sur une ligne : a quatre champs, deux
+ // lignes chacune suffisent a faire deborder le modal sur un portable.
+ champs(colD,[
+  ['Mots-cles a eviter',motsBox,
+   'Entree ou virgule. L\\'annonce est ecartee sans etre ouverte.',
+   motsSugg],
+  ['Salaire minimum',salDuo,'Vide = pas de filtre. Les annonces sans salaire sont gardees.'],
+  ['Score minimum pour garder une offre',scoreDuo,
+   'En dessous, l\\'annonce est lue mais pas enregistree.'],
+  ['Distance maximale',distDuo,
+   'Depuis la ville de la recherche. Sans lieu precis : gardee.']
+ ]);
+ box.appendChild(h('hr'));
+ box.appendChild(h('div',{class:'grille'},colG,colD));
+ box.appendChild(h('hr'));
+ box.appendChild(h('div',{class:'tete',text:'Sites a parcourir'}));
+ box.appendChild(site);
+ box.appendChild(h('div',{class:'aide',
+  text:'Le plafond est divise entre les sites choisis, et ce qu\\'un site n\\'a pas consomme profite au suivant.'}));
  var err=h('div',{class:'err'});
  box.appendChild(err);
  box.appendChild(h('div',{class:'bar',style:'margin-top:14px'},
   h('button',{class:'b',text:'Lancer',onclick:function(){
    err.textContent='';
+   if(!cv){err.textContent='Aucun CV analyse : sans profil, il n\\'y a rien a comparer aux annonces.';return;}
    if(!poste.value.trim()){err.textContent='Indique le poste recherche.';return;}
    if(!ville.value.trim()){err.textContent='Indique la ville et le code postal.';return;}
    if(Number(plaf.value)<Number(obj.value)){err.textContent='Le plafond ('+plaf.value+') doit etre au moins egal a l\\'objectif ('+obj.value+').';return;}
    var sites=choisis();
    if(!sites.length){err.textContent='Choisis au moins un site.';return;}
+   // Un mot encore dans le champ de saisie compte : personne ne pense a
+   // appuyer sur Entree avant de cliquer sur Lancer.
+   if(motIn.value.trim()){ajouteMots(motIn.value);motIn.value='';}
+   var sMin=salMin.value.trim()?Number(salMin.value):null;
+   if(sMin!==null&&!(sMin>0)){err.textContent='Le salaire minimum doit etre un nombre positif, ou vide.';return;}
+   var sc=Number(scoreMin.value);
+   if(!(sc>=0&&sc<=100)){err.textContent='Le score minimum va de 0 a 100.';return;}
+   var km=dist.value.trim()?Number(dist.value):null;
+   if(km!==null&&!(km>0)){err.textContent='La distance maximale doit etre un nombre positif, ou vide.';return;}
+   // Le CV choisi ici devient le CV actif : l'onglet CV, les prochaines
+   // recherches et les lettres doivent suivre, sinon le dashboard se contredit.
+   if(cv&&!cv.is_active)post('/api/cv/active',{cv_id:cv.id},function(){});
    queue('new-search',{title:poste.value.trim(),location:ville.value.trim(),site:sites.join(','),
     contract_wanted:contrat.value,
-    target_count:Number(obj.value),max_seen:Number(plaf.value),cv_id:cv?cv.id:null},
+    target_count:Number(obj.value),max_seen:Number(plaf.value),cv_id:cv?cv.id:null,
+    exclude_keywords:mots.slice(),salary_min:sMin,salary_base:sMin===null?null:salBase.value,
+    min_score:sc,max_distance_km:km},
     'Recherche '+poste.value.trim());
    document.body.classList.remove('modal-open');
   }}),
@@ -2578,7 +2887,15 @@ function pSearch(b){
  [['Lancée le',d(s.started_at)],['Terminée le',s.finished_at?d(s.finished_at):'en cours'],
   ['CV utilisé',s.cv_filename||'-'],['Objectif',String(s.target_count||'-')+' offre(s)'],
   ['Plafond de lecture',s.max_seen!=null?(seen+' / '+s.max_seen+' annonce(s)'):String(seen)],
-  ['Offres retenues',String(s.offers_saved)]].forEach(function(x){
+  ['Offres retenues',String(s.offers_saved)],
+  // Les quatre filtres ne s'affichent que s'ils ont servi : une recherche
+  // lancee sans filtre de salaire ne doit pas montrer une ligne vide.
+  ['Score minimum',s.min_score!=null?s.min_score+' / 100':null],
+  ['Salaire minimum',s.salary_min!=null?(s.salary_min+' € '+nomBase(s.salary_base).toLowerCase()):null],
+  ['Distance maximale',s.max_distance_km!=null?s.max_distance_km+' km':null],
+  ['Mots-clés évités',(s.exclude_keywords||[]).length?s.exclude_keywords.join(', '):null]
+ ].forEach(function(x){
+   if(x[1]==null)return;
    b.appendChild(h('div',{class:'bar',style:'gap:6px;margin:2px 0'},h('span',{class:'mut',text:x[0]+' :'}),h('span',{text:x[1]})));});
  if(s.stats&&Object.keys(s.stats).length){
   b.appendChild(h('h3',{text:'Par site'}));

@@ -1,15 +1,19 @@
 ---
 name: recherche-emploi
-description: Assistant de recherche d'emploi en local (Claude Code). Cherche des offres sur France Travail, HelloWork, Free-Work, Indeed et LinkedIn avec Playwright, les compare à un ou plusieurs CV PDF, enregistre celles qui correspondent à plus de 50 % dans une base SQLite, affiche un dashboard sur localhost:3000 avec un kanban de suivi des candidatures, et rédige des lettres de motivation à la demande. À utiliser quand l'utilisateur dit "cherche des offres", "lance ma recherche d'emploi", "trouve-moi un poste de...", "lettre de motivation pour l'offre #N", "où en sont mes candidatures", "ajoute un CV" ou "ouvre le dashboard emploi".
+description: Assistant de recherche d'emploi en local (Claude Code). Ouvre un dashboard sur localhost:3000 d'où l'utilisateur lance tout - c'est le formulaire du dashboard qui recueille poste, lieu, contrat, sites, mots-clés à éviter, salaire minimum, score minimum et distance maximale, pas le chat. Cherche ensuite des offres sur France Travail, HelloWork, Free-Work, Indeed et LinkedIn avec Playwright, les compare à un ou plusieurs CV PDF, enregistre celles qui passent les filtres dans une base SQLite, suit les candidatures sur un kanban et rédige des lettres de motivation à la demande. À utiliser quand l'utilisateur dit "cherche des offres", "lance ma recherche d'emploi", "trouve-moi un poste de...", "lettre de motivation pour l'offre #N", "où en sont mes candidatures", "ajoute un CV" ou "ouvre le dashboard emploi".
 ---
 
 # Recherche d'emploi
 
 Ce skill tourne dans Claude Code, en local sur la machine de l'utilisateur. Tout reste sur sa machine : CV, base SQLite, dashboard. Réponds toujours en français.
 
-**Le parcours est interactif de bout en bout**, et il se joue dans le dashboard, pas dans le terminal.
+**Tout part du dashboard, jamais du terminal.** C'est la règle qui commande toutes les autres. Lancer le skill ne lance pas une recherche et n'ouvre aucun questionnaire : ça prépare le terrain, ça ouvre le dashboard, et ça s'arrête là. L'utilisateur clique sur « Lancer une recherche », « Analyser ce CV », « Auditer pour les ATS » ou « Lettre de motivation » quand il le décide. Tu travailles quand une action arrive, pas avant.
 
-**Où poser tes questions.** Dès que le watcher est armé (étape 1.6), pose **toutes** tes questions avec `node jobsearch.js ask` : elles s'affichent dans l'onglet Chat du dashboard sous forme de boutons cliquables, et la réponse te revient en notification. `AskUserQuestion` reste le repli quand le watcher n'est pas armé (Monitor indisponible, dashboard fermé). Ne pose jamais la même question des deux côtés à la fois.
+Ne demande donc jamais de ta propre initiative s'il veut lancer une recherche, vérifier un CV ou écrire une lettre. Le formulaire du dashboard pose déjà toutes les questions, et mieux que toi : il garde en mémoire la recherche précédente et il porte des réglages que le chat rend pénibles à saisir.
+
+**Où poser tes questions.** Les seules questions légitimes sont celles qui se posent **pendant** un travail déjà lancé : continuer sur le site suivant, élargir une recherche qui ne donne rien, choisir entre deux lectures d'une annonce. Pose-les avec `node jobsearch.js ask` : elles s'affichent dans l'onglet Chat du dashboard sous forme de boutons cliquables, et la réponse te revient en notification. `AskUserQuestion` reste le repli quand le watcher n'est pas armé (Monitor indisponible, dashboard fermé). Ne pose jamais la même question des deux côtés à la fois.
+
+**Ce que tu proposes en fin de travail est une suggestion, pas un menu.** Une recherche qui se termine peut appeler des lettres de motivation, un audit ATS ou une recherche élargie : dis-le en une phrase, propose les boutons, et laisse tomber si l'utilisateur ne répond pas. Il n'a rien à valider pour que la session continue.
 
 **Parle dans le chat.** L'utilisateur regarde le dashboard, pas le terminal. Tu écris avec `say` :
 
@@ -112,20 +116,25 @@ Par défaut `~/job-search/` (sous Windows : `%USERPROFILE%\job-search\`). Si l'u
 
    Deux garde-fous. Si Playwright est en `ko`, saute complètement ce point et laisse les sites en `unknown` : sans navigateur il n'y a rien à tester. Et si l'utilisateur t'a déjà dit ce qu'il cherchait et sur quels sites, teste seulement ceux-là, les autres attendront.
 
+8. **Tu t'arrêtes.** L'étape 2 ci-dessous (importer les CV qui ont changé) est du travail, pas une question : fais-la sans demander. Ensuite, rends la main avec quelques lignes :
+
+   > Le dashboard est ouvert : http://localhost:3000
+   > Tout se lance depuis là. « Lancer une recherche » ouvre le formulaire avec le poste, le lieu, les sites, et les filtres : mots-clés à éviter, salaire minimum, score minimum, distance maximale. L'onglet CV porte « Analyser ce CV » et « Auditer pour les ATS », et chaque offre a son bouton de lettre de motivation.
+   > Je reste à l'écoute tant que cette session est ouverte.
+
+   Adapte selon l'état réel : s'il manque un CV, dis où le déposer ; si un site est bloqué, dis-le. Mais **ne finis pas sur une question**. Pas de « veux-tu que je lance une recherche ? », pas de menu d'options. L'utilisateur regarde le dashboard, il a tout sous les yeux.
+
+   Une exception, et une seule : si l'utilisateur a lui-même décrit une recherche dans son message (« trouve-moi un poste d'administrateur réseaux à Nantes »), il n'a pas à repasser par le formulaire. Reprends ce qu'il a donné, complète avec les valeurs par défaut de l'étape 3, lance `start-search` et dis en une ligne ce que tu as retenu et ce que le formulaire aurait permis de régler en plus. Ne l'interroge pas champ par champ.
+
 ## Étape 2 : les CV
 
 Le tableau `cvs` renvoyé par `check` liste un élément par PDF présent dans `cv/`, avec `id`, `filename`, `in_db`, `needs_import`, `is_active`.
 
-**Aucun PDF.** Le dossier existe déjà, `check` l'a créé : ne demande jamais à l'utilisateur de le créer, demande-lui d'y déposer un fichier. Donne le chemin exact renvoyé dans `cv_dir`, puis pose la question :
+**Aucun PDF.** Le dossier existe déjà, `check` l'a créé : ne demande jamais à l'utilisateur de le créer, dis-lui d'y déposer un fichier. C'est le seul cas où tu le relances, parce que rien ne peut tourner sans CV. Une ligne, avec le chemin exact renvoyé dans `cv_dir` :
 
-> « Dépose ton CV en PDF dans `<cv_dir>`. Dis-moi quand c'est fait. »
-> Options : **C'est fait** · **Ouvrir le dossier** · **Plus tard**
+> Dépose ton CV en PDF dans `<cv_dir>`, puis clique sur « Relire les CV » dans l'onglet CV du dashboard. J'analyserai le fichier dès qu'il arrive.
 
-- **C'est fait** → `node jobsearch.js scan-cv` et reprends cette étape.
-- **Ouvrir le dossier** → ouvre-le (`explorer "<cv_dir>"` sous Windows, `open` sous macOS, `xdg-open` sous Linux) puis repose la même question.
-- **Plus tard** → arrête-toi proprement en rappelant le chemin.
-
-Au bout de trois tours sans PDF, propose d'en rester là.
+Ouvre le dossier au passage si c'est utile (`explorer "<cv_dir>"` sous Windows, `open` sous macOS, `xdg-open` sous Linux). Ne boucle pas, ne repose pas la question : le bouton du dashboard dépose une action `scan-cv` qui te réveille.
 
 **Un ou plusieurs PDF.** Pour chaque entrée dont `needs_import` vaut `true` (jamais importée, ou PDF modifié depuis le dernier import) :
 
@@ -153,65 +162,64 @@ Au bout de trois tours sans PDF, propose d'en rester là.
 
 `filename` doit correspondre exactement à un PDF présent dans `cv/`, sinon la commande refuse. Le premier CV enregistré devient automatiquement le CV actif.
 
-**Choix du CV.** S'il y a plusieurs CV, `AskUserQuestion` : « Quel CV utiliser pour cette recherche ? », une option par CV libellée `<nom du fichier> - <headline>`. Puis `node jobsearch.js set-active-cv <id>`. S'il n'y en a qu'un, ne pose pas la question.
+**Choix du CV.** Ne le demande pas. Le formulaire du dashboard s'ouvre sur un sélecteur « CV à utiliser » quand il y en a plusieurs : l'utilisateur y bascule d'un clic, le poste et la ville proposés se recalculent sur le profil choisi, et le CV sélectionné devient le CV actif au lancement. Le `cv_id` part dans le payload, tu le reprends tel quel. S'il y a plusieurs CV et que l'utilisateur te lance une recherche depuis le chat sans en nommer un, prends le CV actif et dis lequel en une ligne.
 
 **Orphelins.** Si `orphans` n'est pas vide (des CV en base dont le PDF a disparu du dossier), signale-le en une ligne. Ne supprime rien sans le demander.
 
 ## Étape 3 : paramètres de la recherche
 
-Charge le profil du CV choisi (`node jobsearch.js get-cv <id>`) et **propose des valeurs par défaut qui en viennent** :
-
-- poste ← `profile.headline`, à défaut le `title` de la dernière entrée de `experiences` ;
-- ville et code postal ← `profile.location` ; si le code postal manque, demande-le explicitement ;
-- en dernier recours, la `location` de la dernière recherche en base.
-
-Pose ces cinq questions. `AskUserQuestion` en accepte quatre par appel : fais-en deux, ou passe par `ask` si le watcher est déjà armé.
-
-1. **Poste recherché** - options : `<headline>` · `<titre de la dernière expérience>` · Autre.
-2. **Où** (ville + code postal) - options : `<profile.location>` · `<location de la dernière recherche>` · Autre.
-3. **Type de contrat** - options : **CDI** · **Alternance ou stage** · **CDD ou intérim** · **Peu importe**. Ne devine pas à partir du CV : quelqu'un avec dix ans d'expérience peut chercher une alternance en reconversion, et un profil junior peut viser un CDI. La valeur envoyée au script est `cdi`, `cdd`, `alternance`, `stage`, `interim`, `temps_partiel`, `freelance` ou `tous`. Ajoute **Freelance** aux options quand le poste est informatique : c'est l'essentiel de ce que publie Free-Work.
-4. **Objectif** : combien d'offres correspondantes enregistrer avant de s'arrêter - 5 · 10 · 15.
-5. **Plafond** : combien d'annonces lire au maximum, quelle que soit la moisson - 20 · 40 · 60.
-
-Pour la question 5, dis en une ligne en quoi elle diffère de la 4 : l'objectif limite ce qu'on garde, le plafond limite le temps passé et le nombre de pages ouvertes. Sans plafond, un intitulé trop large fait parcourir des dizaines de pages. Propose par défaut quatre fois l'objectif. Si l'utilisateur choisit un plafond inférieur à l'objectif, dis-le-lui : le script refusera.
-
-Enregistre ensuite la recherche : écris `tmp/search.json`, puis `node jobsearch.js start-search --file tmp/search.json`. Garde le `search_id`.
+**Ces paramètres viennent du formulaire du dashboard, pas de toi.** L'action `new-search` arrive avec le payload complet ; `start-search` le prend tel quel. Ne repose aucune de ces questions, l'utilisateur vient d'y répondre à l'écran.
 
 ```json
 {"title": "Administrateur réseaux", "location": "Nantes 44000", "site": "france_travail,hellowork",
- "contract_wanted": "cdi", "cv_id": 1, "target_count": 10, "max_seen": 40}
+ "contract_wanted": "cdi", "cv_id": 1, "target_count": 10, "max_seen": 40,
+ "exclude_keywords": ["senior", "expérimenté"], "salary_min": 2400, "salary_base": "brut_mensuel",
+ "min_score": 60, "max_distance_km": 30}
 ```
 
-`site` porte une ou plusieurs clés séparées par des virgules ; le script renvoie la liste normalisée dans `sites`. Le choix des sites se fait à l'étape suivante, mais il part dans le même appel.
+Écris-le dans `tmp/search.json`, puis `node jobsearch.js start-search --file tmp/search.json`. Garde le `search_id`, et vérifie la sortie : elle renvoie les filtres normalisés, c'est ce qui fait foi pour la suite.
 
-`contract_wanted` vaut `tous` si l'utilisateur a répondu « peu importe ». Le script refuse toute autre valeur que celles listées plus haut.
+| Champ | Ce qu'il vaut |
+| --- | --- |
+| `title`, `location` | Le poste et la ville avec code postal |
+| `site` | Une ou plusieurs clés séparées par des virgules ; le script renvoie la liste normalisée dans `sites` |
+| `contract_wanted` | `cdi`, `cdd`, `alternance`, `stage`, `interim`, `temps_partiel`, `freelance` ou `tous`. Toute autre valeur est refusée |
+| `target_count` / `max_seen` | L'objectif limite ce qu'on garde, le plafond limite le temps passé. Le plafond ne peut pas être sous l'objectif, le script le refuse |
+| `exclude_keywords` | Mots-clés à éviter, en tableau ou en liste à virgules. Doublons et casse écartés à l'enregistrement |
+| `salary_min` + `salary_base` | Le montant et sa base : `brut_annuel`, `brut_mensuel`, `net_annuel`, `net_mensuel`, `brut_horaire`, `net_horaire`, `tjm`. Un montant sans base est compté en brut annuel ; une base sans montant ne filtre rien |
+| `min_score` | Seuil d'enregistrement, 50 par défaut |
+| `max_distance_km` | Rayon autour de `location` |
+
+Les quatre derniers sont facultatifs et restent à `null` quand ils n'ont pas servi : l'historique doit montrer qu'une recherche a tourné sans filtre, pas qu'elle filtrait à zéro.
+
+**Si l'utilisateur lance une recherche depuis le chat** plutôt que par le formulaire, ne l'interroge pas champ par champ. Reprends ce qu'il a dit et complète :
+
+- poste ← `profile.headline` du CV actif (`node jobsearch.js get-cv <id>`), à défaut le `title` de la dernière entrée de `experiences` ;
+- ville et code postal ← `profile.location`, à défaut la `location` de la dernière recherche en base ;
+- contrat ← ne devine pas à partir du CV : quelqu'un avec dix ans d'expérience peut chercher une alternance en reconversion. Sans indication, `tous` ;
+- objectif 10, plafond 40, score minimum 50, pas de filtre de salaire, de distance ni de mot à éviter.
+
+Puis annonce en une ligne ce que tu as retenu, et rappelle que le formulaire du dashboard permet de régler les filtres. Une seule question reste admise ici, et seulement si tu ne peux pas trancher : le code postal, quand ni le CV ni l'historique n'en donnent.
+
+## Étape 3 bis : appliquer les filtres
+
+Quatre filtres, deux que le script fait respecter tout seul et deux qui dépendent de ta lecture.
+
+**Mots-clés à éviter** - `exclude_keywords`. Regarde l'intitulé **avant d'ouvrir l'annonce** : un mot de la liste présent dans le titre, et tu passes sans ouvrir. C'est tout le but, ça économise le plafond de lecture. `add-offer` refuse de son côté toute offre dont l'intitulé porte un de ces mots, en comparant sans accents ni casse et sur des mots entiers (« senior » ne se déclenche pas sur « séniorité »). Si le mot n'apparaît que dans le corps de l'annonce, c'est ton jugement qui tranche : « cinq ans d'expérience exigés » dans un profil recherché vaut le mot « expérimenté » dans un titre, une mention en passant non. Compte l'annonce comme lue et retiens le motif.
+
+**Score minimum** - `min_score`. Il remplace le seuil de 50 de la grille de notation. `add-offer` refuse en dessous, avec le seuil dans le message d'erreur : ce n'est pas un bug, c'est le filtre qui joue. N'insiste pas avec `--force`, sauf si l'utilisateur te le demande explicitement pour une offre précise.
+
+**Salaire minimum** - `salary_min` et `salary_base`. Les annonces écrivent ce qu'elles veulent : « 32-38 k€ », « 2 400 € brut mensuel sur 13 mois », « 450 € / jour ». Ramène ce que tu lis à la base demandée avant de comparer, et prends le **bas** de la fourchette : c'est ce qui sera proposé. Trois règles pour les conversions courantes : un annuel se divise par 12 pour un mensuel (sur 12 mois, sauf si l'annonce précise 13 ou 14 mois), le net vaut environ 0,78 fois le brut pour un salarié du privé, et un TJM ne se compare qu'à un TJM. Une annonce **sans salaire affiché est gardée** - c'est le cas de la majorité, les écarter viderait la recherche. Note juste l'absence dans `gaps`. Une annonce clairement sous le seuil est écartée : compte-la comme lue, retiens le motif.
+
+**Distance maximale** - `max_distance_km`. Mesure depuis la ville de `location`. Tu n'as pas de calculateur : l'ordre de grandeur suffit, et dans le doute tu gardes. Trois cas gardent l'offre quoi qu'il arrive : **pas de lieu indiqué**, lieu trop vague pour être situé (« Île-de-France », « plusieurs sites »), et **télétravail complet**. Un télétravail partiel se juge sur le lieu du site. Une offre gardée alors que le lieu est incertain mérite une ligne dans `gaps`, pour que l'utilisateur sache quoi vérifier.
+
+Ces quatre filtres sont rappelés dans la sortie de `update-search` à chaque point d'étape, et `node jobsearch.js get-search [id]` les relit à tout moment. Sur une recherche longue, sers-t'en plutôt que de te fier à ta mémoire du début de session.
 
 ## Étape 4 : plateformes
 
-L'utilisateur coche ce qu'il veut, autant de sites qu'il veut, et « Tous les sites » existe. **Passe par `ask` avec `multi: true`** : c'est la seule voie qui affiche les cinq sites en cases à cocher. Le watcher est armé depuis l'étape 1, donc c'est la voie normale.
+**Les sites arrivent cochés dans le payload de `new-search`**, en pastilles dans le formulaire du dashboard, « Tous les sites » compris. Ne les redemande pas.
 
-```json
-{
-  "prompt": "Sur quels sites chercher ? Le budget d'annonces se répartit entre les sites cochés.",
-  "options": [
-    {"value": "tous", "label": "Tous les sites", "detail": "les cinq, budget divisé par cinq"},
-    {"value": "france_travail", "label": "France Travail", "detail": "le plus gros volume, aucun blocage"},
-    {"value": "hellowork", "label": "HelloWork", "detail": "bonne couverture générale"},
-    {"value": "free_work", "label": "Free-Work", "detail": "tech et IT, CDI et freelance"},
-    {"value": "indeed", "label": "Indeed", "detail": "large, mais vérifications anti-robot fréquentes"},
-    {"value": "linkedin", "label": "LinkedIn", "detail": "des offres absentes des autres sites, lu en visiteur"}
-  ],
-  "multi": true
-}
-```
-
-Si `tous` revient dans les `values`, envoie les cinq clés et ignore le reste de la sélection. Coche mentalement France Travail et HelloWork comme défaut : si l'utilisateur répond à côté ou ne choisit rien, pars sur ces deux-là en le disant.
-
-**Si le watcher n'est pas armé**, `AskUserQuestion` plafonne à quatre options : ne liste pas les sites un par un, tu en perdrais. Propose quatre combinaisons, en simple choix :
-
-- **France Travail et HelloWork** (recommandé) · **Tous les sites** · **Tech et IT** (France Travail, Free-Work, LinkedIn) · **France Travail seul** (le plus rapide)
-
-L'option « Other » ajoutée automatiquement laisse écrire une liste sur mesure.
+Tu n'as à choisir que si l'utilisateur lance une recherche depuis le chat sans nommer de site : pars sur France Travail et HelloWork, dis-le en une ligne, et ajoute Free-Work d'office quand le poste est informatique.
 
 | Site | Clé | Ce qu'il apporte |
 | --- | --- | --- |
@@ -227,8 +235,8 @@ Le champ `site` de `start-search` accepte **une ou plusieurs clés séparées pa
 
 1. **Répartis le budget.** Objectif et plafond sont divisés par le nombre de sites. Le reliquat non consommé par une passe est reporté sur les suivantes.
 2. **Ordonne les passes** du plus productif au plus fragile : France Travail, HelloWork, Free-Work, Indeed, LinkedIn en dernier. Un site qui bloque coûte ainsi le moins possible.
-3. **Entre chaque passe**, `node jobsearch.js update-search --file tmp/checkpoint.json` avec `{"search_id": N, "offers_seen": 18, "stats": {"france_travail": {"seen": 18, "saved": 4}}}`. La commande renvoie `budget_restant` et `offres_restantes`. Les `stats` s'accumulent : une clé par site.
-4. **Point de contrôle.** Présente le bilan de la passe (annonces lues, offres enregistrées, meilleur score, motifs de rejet les plus fréquents) **et le budget d'annonces restant**, puis `AskUserQuestion` : **Continuer sur `<site suivant>`** · **S'arrêter là** · **Élargir sur le site courant** (intitulé voisin, rayon plus large).
+3. **Entre chaque passe**, `node jobsearch.js update-search --file tmp/checkpoint.json` avec `{"search_id": N, "offers_seen": 18, "stats": {"france_travail": {"seen": 18, "saved": 4}}}`. La commande renvoie `budget_restant`, `offres_restantes` et le rappel des `filtres`. Les `stats` s'accumulent : une clé par site.
+4. **Point de contrôle.** C'est le moment où une question se justifie, parce qu'elle porte sur un travail en cours. Présente le bilan de la passe avec `say` (annonces lues, offres enregistrées, meilleur score, motifs de rejet les plus fréquents, dont les filtres qui ont le plus écarté) **et le budget d'annonces restant**, puis `ask` : **Continuer sur `<site suivant>`** · **S'arrêter là** · **Élargir sur le site courant** (intitulé voisin, rayon plus large, filtre desserré). Si un filtre a écarté beaucoup plus que les autres, dis-le : c'est l'information qui permet de le corriger. Sans réponse, enchaîne sur le site suivant plutôt que d'attendre.
 5. **Dédoublonnage inter-sites.** À partir de la deuxième passe, avant d'ouvrir chaque annonce : `has-url`, **puis** `node jobsearch.js find-offer --company "<entreprise>"`. La même offre a une URL différente selon le site et `has-url` ne la reconnaîtrait pas - et plus il y a de sources, plus les mêmes annonces reviennent.
 
 ## Étape 5 : recherche et lecture des annonces
@@ -273,7 +281,7 @@ Si l'URL ne donne pas de résultats cohérents (les sites évoluent), passe par 
 **Parcourir la liste.** Fais défiler la page pour charger les résultats, puis traite les annonces dans l'ordre. Ignore les annonces sponsorisées sans rapport avec le poste. Pour chaque annonce :
 
 1. Récupère son URL et lance `node jobsearch.js has-url "<url>"`. Si `known` vaut `true`, passe à la suivante (déjà traitée lors d'une recherche précédente). C'est ce qui garantit l'absence de doublon d'une recherche à l'autre : fais-le **avant** d'ouvrir l'annonce, pas après.
-   Si `contract_wanted` est précis et que le contrat affiché sur la liste ne correspond pas, passe aussi sans ouvrir. Compte l'annonce comme lue et retiens le motif pour le récapitulatif.
+   Puis passe la carte au crible de ce que la liste affiche déjà, toujours sans ouvrir : contrat qui ne correspond pas à `contract_wanted`, mot de `exclude_keywords` dans l'intitulé, lieu manifestement au-delà de `max_distance_km`, salaire affiché sous `salary_min`. Chaque annonce écartée ici est une page qu'on n'ouvre pas : c'est là que le plafond de lecture se préserve. Compte-la comme lue et retiens le motif pour le récapitulatif.
 2. Clique sur l'annonce. Selon le site, elle s'ouvre dans la même page, dans un panneau latéral ou dans un nouvel onglet (`browser_tabs` pour t'y placer, puis ferme-le après lecture). Si le clic ne marche pas, navigue directement vers l'URL.
 3. Déplie tout le contenu : clique sur chaque bouton "Voir plus", "Lire la suite", "Afficher plus", "Voir la description complète" dans la zone de l'annonce.
 4. Lis l'annonce en entier. Préfère `browser_evaluate` avec `() => (document.querySelector('main') || document.body).innerText` aux captures d'écran : c'est complet et bien moins coûteux. Si le texte semble tronqué, fais un `browser_snapshot`.
@@ -304,7 +312,9 @@ Applique toujours la même grille pour que les scores soient comparables d'une o
 
 **Contrat demandé.** Si `contract_wanted` vaut `tous`, ce critère ne joue pas. Sinon, une offre dont le contrat ne correspond pas est **écartée**, quel que soit son score : c'est un refus net, pas une pénalité diluée dans les 10 points de Conditions. Deux exceptions à traiter en le disant : une annonce qui propose plusieurs contrats dont celui demandé correspond ; une annonce qui ne précise aucun contrat se note normalement, en portant le doute dans `gaps`.
 
-**Seuil d'enregistrement :** score total supérieur ou égal à 50 **et** au moins 15/40 en compétences. Une offre sous le seuil n'est pas enregistrée, mais compte-la dans les annonces lues et garde en tête son intitulé et la raison du rejet pour le récapitulatif.
+**Seuil d'enregistrement :** score total supérieur ou égal au `min_score` de la recherche (50 par défaut) **et** au moins 15/40 en compétences. `add-offer` fait respecter le premier et refuse en dessous ; le second reste à ta charge. Une offre sous le seuil n'est pas enregistrée, mais compte-la dans les annonces lues et garde en tête son intitulé et la raison du rejet pour le récapitulatif.
+
+**Les filtres de l'étape 3 bis écartent avant la note, pas à cause d'elle.** Un mot à éviter dans l'intitulé, un salaire affiché sous le minimum, un lieu hors rayon : l'offre sort, quel que soit le score qu'elle aurait obtenu. Ne les dilue pas dans les 10 points de Conditions, et ne note pas une offre que tu viens d'écarter - c'est du temps perdu.
 
 **Avis :** `postuler` à partir de 70, `a_etudier` entre 50 et 69, `ne_pas_postuler` si un critère bloquant existe malgré le score (diplôme ou habilitation obligatoire absent du CV, lieu incompatible, annonce douteuse).
 
@@ -335,18 +345,16 @@ L'offre arrive dans la colonne « À postuler » du kanban. `cv_id` mémorise co
    - pourquoi la recherche s'est arrêtée : objectif atteint, plafond atteint, ou plus de résultats ;
    - un tableau des offres enregistrées, triées par score : n°, poste, entreprise, lieu, contrat, score, avis ;
    - pour chaque offre, un conseil franc en une ou deux phrases : postuler ou non, pourquoi, et l'écart principal à anticiper en entretien ;
-   - en une ligne, les motifs de rejet les plus fréquents (utile pour ajuster la recherche) ;
+   - **ce que les filtres ont coûté**, en une ou deux lignes : combien d'annonces écartées par les mots à éviter, par le salaire, par la distance, par le score. C'est l'information qui permet à l'utilisateur de régler son prochain formulaire. Si un filtre a tout fauché - huit annonces sur dix écartées sur le salaire - dis-le franchement et suggère la valeur qui aurait laissé passer quelque chose ;
    - le lien http://localhost:3000 et l'onglet **Suivi** pour déplacer les offres au fil des candidatures.
 
 Sois honnête dans les conseils : un 55 % avec un écart majeur sur une compétence indispensable ne mérite pas un "fonce".
 
 ## Étape 7 : lettres de motivation
 
-En fin de recherche, `AskUserQuestion` : « Une lettre de motivation ? »
+**Ne les propose pas d'office au démarrage.** Une lettre se demande, par le bouton de la fiche d'offre, par « Écrire les lettres manquantes », ou en te le disant.
 
-- **Pour toutes** les offres enregistrées cette session (annonce le nombre)
-- **Pour une seule** → seconde question listant les offres de la session, libellées `#id - poste - entreprise - score`
-- **Aucune pour l'instant**
+En fin de recherche en revanche, la proposition a du sens : l'utilisateur vient d'obtenir des offres, il peut vouloir enchaîner. Ferme le récapitulatif par un `ask` à trois options - **Écrire les lettres pour les N offres conseillées** · **Choisir une offre** · **Plus tard** - et traite l'absence de réponse comme un « plus tard ». Pas de relance.
 
 L'utilisateur peut aussi en demander une à tout moment : « lettre pour l'offre #12 », ou la phrase copiée depuis le dashboard. Dans tous les cas :
 
@@ -359,22 +367,33 @@ L'utilisateur peut aussi en demander une à tout moment : « lettre pour l'offre
 
 Si tu en rédiges plusieurs à la suite, enchaîne sans reposer la question entre chaque, et affiche-les l'une après l'autre.
 
-## Étape 8 : menu final
+## Étape 8 : ce que tu suggères ensuite
 
-Termine toujours par `AskUserQuestion` : « Et maintenant ? »
+Il n'y a plus de menu final. Un travail qui se termine se termine : tu annonces le résultat et tu te remets à l'écoute. Ce qui suit, c'est l'utilisateur qui le décide, depuis le dashboard.
 
-- **Nouvelle recherche** → retour à l'étape 3. Le CV actif est conservé, repropose les mêmes valeurs par défaut.
-- **Relire les CV** → `node jobsearch.js scan-cv`, puis étape 2 : importe les nouveaux PDF, ré-importe ceux qui ont changé, et redemande lequel utiliser.
-- **Écrire des lettres** → liste les offres déjà en base sans lettre, statut `a_postuler`, triées par score, puis étape 7.
-- **Auditer un CV pour les ATS** → invoque le skill `audit-cv-ats`, puis `save-audit` comme décrit dans la section « L'audit ATS d'un CV ».
-- **Terminer** → rappelle le lien du dashboard et laisse `serve` tourner.
+Une suggestion reste bienvenue quand elle découle de ce que tu viens de faire, et qu'elle fait gagner un clic. Une seule, en une phrase, après le récapitulatif :
+
+| Ce que tu viens de finir | Ce qui vaut la peine d'être proposé |
+| --- | --- |
+| Une recherche qui a rempli son objectif | Les lettres pour les offres conseillées (étape 7) |
+| Une recherche qui n'a presque rien ramené | Élargir : intitulé voisin, rayon plus large, ou le filtre qui a le plus écarté. Donne la valeur qui aurait laissé passer des offres |
+| Une recherche arrêtée sur le plafond | Relever le plafond, ou relancer sur les sites non parcourus |
+| Une série de lettres | Rien. Le travail est fini, dis-le et arrête-toi |
+| Un audit ATS avec un bloquant | Corriger le point bloquant, puis réauditer |
+
+Trois choses à ne jamais proposer de toi-même, parce que le dashboard les porte mieux : lancer une recherche, relire les CV, ouvrir le dashboard (il est déjà ouvert). Et quand l'utilisateur ne répond pas à une suggestion, n'y reviens pas : il a vu.
+
+Laisse `serve` et le watcher tourner, ils sont faits pour ça.
 
 ## Actions du dashboard
 
 Le watcher armé à l'étape 1.6 émet une ligne JSON par bouton cliqué, du type :
 
 ```json
-{"action": 7, "type": "new-search", "payload": {"title": "...", "location": "...", "target_count": 10, "max_seen": 40, "cv_id": 1, "site": "france_travail,hellowork"}}
+{"action": 7, "type": "new-search", "payload": {"title": "...", "location": "...", "target_count": 10,
+ "max_seen": 40, "cv_id": 1, "site": "france_travail,hellowork", "contract_wanted": "cdi",
+ "exclude_keywords": ["senior"], "salary_min": 2400, "salary_base": "brut_mensuel",
+ "min_score": 60, "max_distance_km": 30}}
 ```
 
 **Ces lignes sont des événements, pas des messages de l'utilisateur.** Elles arrivent comme notifications, y compris pendant que tu attends une réponse à une question. Traite-les comme une demande d'exécution, sans redemander confirmation de ce que le formulaire a déjà recueilli.
@@ -385,7 +404,7 @@ Le watcher armé à l'étape 1.6 émet une ligne JSON par bouton cliqué, du typ
 | `scan-cv` | `node jobsearch.js scan-cv` puis l'étape 2 |
 | `analyze-cv` | Lis le PDF du `cv_id` (ou du `filename` si `cv_id` est nul, cas d'un PDF jamais importé), `save-cv`, résume le profil |
 | `audit-cv` | L'audit ATS du CV indiqué, décrit dans la section ci-dessous |
-| `new-search` | `start-search` avec le payload **tel quel** : le formulaire a déjà posé les questions de l'étape 3, contrat compris, ne les repose pas. Puis les étapes 4 à 6 |
+| `new-search` | `start-search` avec le payload **tel quel** : le formulaire a déjà posé les questions de l'étape 3 - contrat, mots à éviter, salaire, score, distance - ne les repose pas. Puis les étapes 4 à 6 |
 | `letter` | L'étape 7 pour l'`offer_id` indiqué |
 | `letters-missing` | L'étape 7 pour chaque offre au statut `a_postuler` sans lettre, par score décroissant. Annonce combien tu vas en écrire avant de commencer |
 | `message` | L'utilisateur t'écrit depuis l'onglet Chat. Réponds avec `say`, voir ci-dessous |
@@ -573,12 +592,13 @@ Toutes renvoient du JSON. En cas d'erreur : code de sortie 1 et `{"ok": false, "
 | `save-audit --file f` | Enregistre le résultat d'un audit ATS (note sur 20, grille, bloquants) |
 | `list-audits [--cv id]` | Relit les audits enregistrés, du plus récent au plus ancien |
 | `set-active-cv <id\|fichier>` | Choisit le CV de référence pour la suite |
-| `start-search --file f` | Ouvre une recherche (`site`, `cv_id`, `target_count`, `max_seen`, `contract_wanted`) |
-| `update-search --file f` | Point d'étape : renvoie `budget_restant` et `offres_restantes` |
+| `start-search --file f` | Ouvre une recherche (`site`, `cv_id`, `target_count`, `max_seen`, `contract_wanted`, `exclude_keywords`, `salary_min`, `salary_base`, `min_score`, `max_distance_km`) |
+| `get-search [id]` | Relit une recherche et ses filtres. Sans id, la plus récente |
+| `update-search --file f` | Point d'étape : renvoie `budget_restant`, `offres_restantes` et le rappel des `filtres` |
 | `finish-search --file f` | Clôt la recherche avec les statistiques par site |
 | `has-url <url>` | L'offre est-elle déjà en base ? À lancer avant d'ouvrir chaque annonce |
 | `find-offer --company "X" [--title "Y"]` | Même offre sous une autre URL (doublon d'un site à l'autre) |
-| `add-offer --file f` | Enregistre ou met à jour une offre (clé : URL normalisée) |
+| `add-offer --file f [--force]` | Enregistre ou met à jour une offre (clé : URL normalisée). Refuse si le score est sous le `min_score` de la recherche ou si l'intitulé porte un mot de `exclude_keywords` ; `--force` passe outre |
 | `list-offers [--search id] [--status s] [--cv id] [--kanban]` | Liste filtrée |
 | `get-offer <id>` | Détail d'une offre avec ses lettres |
 | `add-letter --file f` | Enregistre une lettre |

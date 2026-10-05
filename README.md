@@ -14,7 +14,7 @@ Tout tourne sur votre machine. Aucun compte à créer, aucun serveur distant, au
 
 ## Les deux skills
 
-**`recherche-emploi`** - Vous dites « lance ma recherche d'emploi ». Claude ouvre un vrai navigateur, cherche sur les sites que vous avez cochés, lit les annonces une par une, les compare à votre CV et garde celles qui passent la barre. Vous suivez tout depuis une page web locale : la liste des offres avec leur score, le détail de chacune, un kanban pour savoir où vous en êtes, vos CV en PDF, et un chat pour parler à Claude sans quitter la page.
+**`recherche-emploi`** - Vous lancez le skill, Claude ouvre une page web locale et s'y tient à l'écoute. Tout part de là : vous cliquez sur **Lancer une recherche**, vous remplissez le formulaire, Claude ouvre un vrai navigateur, lit les annonces une par une, les compare à votre CV et garde celles qui passent vos filtres. La même page porte la liste des offres avec leur score, le détail de chacune, un kanban pour savoir où vous en êtes, vos CV en PDF, et un chat pour parler à Claude sans quitter la page.
 
 **`audit-cv-ats`** - Vous dites « analyse mon CV ». Claude examine le fichier comme le ferait un ATS, note six critères, vous rend une note sur 20, la liste des mots-clés qui manquent et une version corrigée du CV.
 
@@ -160,9 +160,9 @@ Vos données ne risquent rien : la base SQLite, les CV et les lettres vivent dan
 /recherche-emploi:recherche-emploi
 ```
 
-C'est tout. Vous n'avez rien à préparer : Claude crée le sous-dossier `cv/`, installe son script, crée la base et ouvre le dashboard sur <http://localhost:3000>. Il vous demande alors de déposer votre CV en PDF dans `cv/`, avec un bouton qui ouvre le dossier pour vous, et il attend que vous confirmiez.
+C'est tout. Vous n'avez rien à préparer : Claude crée le sous-dossier `cv/`, installe son script, crée la base et ouvre le dashboard sur <http://localhost:3000>. S'il n'y trouve aucun CV, il vous dit où déposer votre PDF, avec un bouton qui ouvre le dossier pour vous.
 
-Ses questions s'affichent ensuite dans le chat de la page, avec les réponses en boutons : quel CV utiliser, quel poste et quelle ville chercher, combien d'offres vous voulez garder, combien d'annonces il a le droit de lire au maximum, sur quel site chercher. Vous cliquez, vous ne tapez rien.
+Puis il s'arrête et vous laisse la main. **Il ne vous demandera pas s'il faut lancer une recherche** : c'est le bouton **Lancer une recherche** de la page qui le fait, quand vous le décidez. Même chose pour analyser un CV, l'auditer ou rédiger une lettre, chacun a son bouton. Le chat sert à ce qui arrive en cours de route : Claude y raconte où il en est et vous pose ses questions en boutons quand une recherche mérite d'être élargie ou arrêtée.
 
 **Pourquoi ce nom doublé ?** Claude Code préfixe les skills livrés par un plugin du nom de leur plugin. Ici le plugin et le skill portent tous deux le nom `recherche-emploi`, d'où `/recherche-emploi:recherche-emploi`. Même chose pour `/audit-cv-ats:audit-cv-ats`. Si vous avez installé à la main dans `~/.claude/skills/`, le préfixe disparaît : `/recherche-emploi` suffit.
 
@@ -174,16 +174,37 @@ Ses questions s'affichent ensuite dans le chat de la page, avec les réponses en
 
 ### Lancer une recherche
 
-Deux nombres décident de la durée :
+Le bouton **Lancer une recherche**, en haut du dashboard, ouvre le formulaire. C'est le seul endroit d'où part une recherche : Claude ne vous le proposera jamais de lui-même, et il ne vous posera aucune de ces questions dans le chat.
+
+![Le formulaire de recherche, avec les reglages a gauche et les filtres a droite](docs/captures/10-lancer-recherche.png)
+
+Il s'ouvre pré-rempli avec votre recherche précédente, filtres compris. Relancer la même chose la semaine suivante demande un clic.
+
+**À gauche, ce que vous cherchez.**
+
+Le **CV à utiliser**, quand vous en avez plusieurs : le poste et la ville proposés se recalculent sur le profil choisi, et ce CV devient le CV actif du dashboard au lancement.
+
+Le **type de contrat** : CDI, CDD, alternance, stage, intérim, temps partiel, freelance, ou peu importe. Ce n'est pas déduit de votre CV, parce que ça se déduit mal : on peut avoir dix ans de métier et chercher une alternance en reconversion. Quand un contrat précis est demandé, il filtre dès la page de résultats plutôt que de dépenser votre plafond de lecture sur des annonces hors sujet.
+
+Puis deux nombres, qui décident de la durée :
 
 - **l'objectif**, le nombre d'offres que vous voulez garder. Dix est un bon départ ;
 - **le plafond**, le nombre d'annonces que Claude a le droit d'ouvrir avant d'abandonner. Quarante pour dix offres gardées, c'est la bonne proportion. C'est un plafond **global** : il compte toutes les annonces lues, tous sites confondus, et se partage ensuite entre les sites que vous avez retenus. Il monte jusqu'à douze fois l'objectif si vous voulez ratisser large.
 
 Sans plafond, une recherche trop large peut tourner très longtemps. La recherche s'arrête dès que l'un des deux est atteint, et le dashboard affiche « 12/40 lues » pour que vous sachiez où ça en est.
 
-Il vous demande aussi le **type de contrat** : CDI, CDD, alternance, stage, intérim, temps partiel, freelance, ou peu importe. Ce n'est pas déduit de votre CV, parce que ça se déduit mal : on peut avoir dix ans de métier et chercher une alternance en reconversion. Quand un contrat précis est demandé, il filtre dès la page de résultats plutôt que de dépenser votre plafond de lecture sur des annonces hors sujet, et une offre dont le contrat ne correspond pas est écartée même si elle est bonne par ailleurs.
+**À droite, ce qui fait écarter une offre.** Les quatre sont facultatifs : laissés vides, ils ne filtrent rien.
 
-Enfin, **sur quels sites chercher**. Cliquez les logos que vous voulez, ou « Tous les sites » d'un coup. Un logo en couleur, c'est un site retenu ; en gris, il est ignoré.
+| Filtre | Ce qu'il fait |
+| --- | --- |
+| **Mots-clés à éviter** | Vous tapez un mot, Entrée ou virgule le pose en pastille. Une annonce dont l'**intitulé** porte un de ces mots est écartée sans même être ouverte, ce qui préserve votre plafond de lecture. La comparaison ignore accents et majuscules et ne retient que les mots entiers : « senior » ne se déclenche pas sur « séniorité ». Six mots courants sont proposés en un clic |
+| **Salaire minimum** | Un montant et sa base : brut ou net, annuel, mensuel ou horaire, ou un TJM pour le freelance. Claude ramène ce qu'affiche l'annonce à cette base avant de comparer, et retient le bas des fourchettes. **Une annonce sans salaire affiché reste gardée** - c'est le cas de la plupart, les écarter viderait la recherche |
+| **Score minimum** | La note en dessous de laquelle une offre n'est pas enregistrée. 50 par défaut. Montez-le à 65 ou 70 si vous croulez sous les résultats moyens |
+| **Distance maximale** | Un rayon en kilomètres autour de la ville indiquée. **Les annonces sans lieu précis sont gardées**, celles en télétravail complet aussi |
+
+À la fin de la recherche, Claude vous dit ce que chaque filtre a coûté : combien d'annonces écartées sur le salaire, sur les mots-clés, sur la distance. Si l'un d'eux a tout fauché, il vous donne la valeur qui aurait laissé passer quelque chose.
+
+**En bas, sur quels sites chercher.** Cliquez les logos que vous voulez, ou « Tous les sites » d'un coup. Un logo en couleur, c'est un site retenu ; en gris, il est ignoré.
 
 | Site | Ce qu'il apporte |
 | --- | --- |
@@ -211,7 +232,9 @@ Chaque annonce lue est notée sur 100, toujours avec la même grille :
 | Lieu | 10 |
 | Conditions (contrat, salaire, diplôme) | 10 |
 
-Une offre n'est enregistrée qu'à partir de 50 sur 100, **et** 15 sur 40 en compétences. Les autres sont comptées dans les annonces lues, avec la raison du rejet dans le récapitulatif de fin.
+Une offre n'est enregistrée qu'à partir du **score minimum** du formulaire - 50 sur 100 par défaut - **et** 15 sur 40 en compétences. Les autres sont comptées dans les annonces lues, avec la raison du rejet dans le récapitulatif de fin.
+
+Les filtres de la colonne de droite passent avant la note : un mot à éviter dans l'intitulé, un salaire sous votre minimum ou un lieu hors rayon écartent l'offre quel que soit son score. Ce n'est pas une pénalité de quelques points diluée dans le total, c'est un refus net.
 
 Dans l'onglet **Offres**, un clic sur une carte ouvre le détail à droite : description complète, salaire et date de publication quand l'annonce les donne, ce qui colle avec votre CV, ce qui manque, et un conseil en deux ou trois phrases. La largeur du panneau se règle à la souris en tirant sur la barre de séparation, et se retient d'une fois sur l'autre.
 
@@ -235,7 +258,7 @@ Une règle tient tout : **rien dans la lettre qui ne soit pas dans votre CV**. P
 
 ### Les CV
 
-Plusieurs CV peuvent cohabiter dans `cv/`. Un seul est actif à la fois, c'est celui contre lequel les offres sont notées - et le score bouge beaucoup selon le CV choisi, ce qui est bien le but quand on vise deux métiers différents.
+Plusieurs CV peuvent cohabiter dans `cv/`. Un seul est actif à la fois, c'est celui contre lequel les offres sont notées - et le score bouge beaucoup selon le CV choisi, ce qui est bien le but quand on vise deux métiers différents. Le formulaire de recherche porte un sélecteur « CV à utiliser » pour en changer au moment de lancer, sans passer par l'onglet CV.
 
 L'onglet **CV** affiche le PDF en grand, à faire défiler, avec le texte sélectionnable. Un clic sur une carte de CV l'ouvre. Le bouton d'audit ATS lance le second skill et rapatrie la note dans le dashboard.
 
@@ -243,7 +266,7 @@ L'onglet **CV** affiche le PDF en grand, à faire défiler, avec le texte sélec
 
 ### Retrouver une recherche passée
 
-L'onglet **Historique** garde une ligne par recherche : les mots-clés, le site, le CV utilisé, l'objectif, le nombre d'annonces lues sur le plafond, et les offres retenues. Le détail d'une recherche affiche aussi les notes que Claude a prises en chemin : pourquoi il a écarté telle annonce, où il a buté, ce qu'il n'a pas eu le temps de lire.
+L'onglet **Historique** garde une ligne par recherche : les mots-clés, le site, le CV utilisé, l'objectif, le nombre d'annonces lues sur le plafond, et les offres retenues. Le détail d'une recherche rappelle les filtres qui ont servi - score minimum, salaire, distance, mots évités - et affiche les notes que Claude a prises en chemin : pourquoi il a écarté telle annonce, où il a buté, ce qu'il n'a pas eu le temps de lire. Une recherche lancée sans filtre n'en affiche aucun, plutôt qu'une ligne vide.
 
 ![L'historique des recherches et le detail de l'une d'elles](docs/captures/07-historique.png)
 
@@ -284,6 +307,8 @@ Le bouton **Theme** en haut à droite ouvre trois modes - Auto, Clair, Sombre - 
 ## Astuces
 
 **Commencez petit.** Dix offres pour quarante annonces lues. Vous verrez tout de suite si vos mots-clés sont les bons, et vous ajusterez avant d'y passer une heure.
+
+**Ajoutez les filtres au deuxième tour, pas au premier.** Une première recherche sans filtre vous montre ce que le marché propose vraiment. C'est en lisant ces résultats que vous saurez quel salaire minimum est réaliste et quels mots d'intitulé reviennent sans vous concerner. Quatre filtres serrés dès le départ sur un intitulé mal choisi, et vous ne ramenez rien sans comprendre pourquoi.
 
 **Passez une fois sur HelloWork et Indeed** dans le navigateur ouvert par Playwright, en acceptant ou refusant leur bandeau de cookies. Ce n'est pas nécessaire pour chercher, mais Indeed affiche parfois un mur de connexion en deuxième page de résultats, et le profil garde vos cookies d'une session à l'autre. France Travail et Free-Work n'en ont pas besoin. Pour LinkedIn, ne vous connectez pas : Claude ne se servira pas de votre session, par choix.
 

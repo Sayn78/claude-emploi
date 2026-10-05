@@ -10,6 +10,25 @@ Les numéros suivent [semver](https://semver.org/lang/fr/) : le chiffre du milie
 
 ## recherche-emploi
 
+### 2.14.0 - 2026-10-05
+
+Le dashboard devient le point de départ, et le formulaire de recherche gagne quatre filtres.
+
+Jusqu'ici, lancer le skill déclenchait un interrogatoire : voulez-vous chercher, quel CV, quel poste, quelle ville, quel contrat, combien d'offres, combien d'annonces, sur quels sites. Sept questions avant la première annonce, alors que le dashboard affichait déjà un bouton qui les pose toutes d'un coup, et qui se souvient de la fois précédente.
+
+- **Lancer le skill ne lance plus rien.** Claude installe ce qu'il faut, importe les CV qui ont changé, ouvre le dashboard et se met à l'écoute. Il ne demande plus s'il faut chercher, vérifier un CV ou écrire une lettre : chacun a son bouton dans la page. Les questions qu'il pose encore portent sur un travail déjà en cours, comme continuer sur le site suivant ou élargir une recherche qui ne donne rien. Et ce qu'il propose en fin de recherche est une suggestion, plus un menu : sans réponse de votre part, il n'insiste pas.
+- **Mots-clés à éviter.** Vous tapez un mot, Entrée ou virgule le pose en pastille. Une annonce dont l'intitulé porte un de ces mots est écartée sans même être ouverte, ce qui préserve le plafond de lecture. La comparaison ignore accents et majuscules et ne retient que les mots entiers : « senior » ne se déclenche pas sur « séniorité ». Six mots courants sont proposés en un clic.
+- **Salaire minimum**, avec sa base : brut ou net, annuel, mensuel ou horaire, ou un TJM pour le freelance. Claude ramène ce qu'affiche l'annonce à cette base avant de comparer et retient le bas des fourchettes. Une annonce sans salaire affiché reste gardée, c'est le cas de la plupart.
+- **Score minimum.** Le seuil de 50 était jusqu'ici écrit en dur dans la grille de notation. Il devient un réglage de la recherche, et le script le fait respecter : une offre sous le seuil n'entre pas en base.
+- **Distance maximale**, en kilomètres autour de la ville cherchée. Les annonces sans lieu précis sont gardées, celles en télétravail complet aussi.
+- **Le CV se choisit depuis le formulaire** quand il y en a plusieurs. Le poste et la ville proposés se recalculent sur le profil choisi, et ce CV devient le CV actif du dashboard au lancement.
+- **Le formulaire passe en deux colonnes** sur un écran de PC - ce que vous cherchez à gauche, ce qui fait écarter à droite, les sites en pleine largeur dessous. Dix champs empilés obligeaient à faire défiler. En dessous de 880 pixels de large, il reprend sa disposition en colonne.
+- **Le bilan de fin de recherche dit ce que les filtres ont coûté** : combien d'annonces écartées sur le salaire, sur les mots-clés, sur la distance, sur le score. Si l'un d'eux a tout fauché, Claude donne la valeur qui aurait laissé passer quelque chose.
+- Le détail d'une recherche, dans l'onglet Historique, rappelle les filtres qui ont servi. Une recherche lancée sans filtre n'en affiche aucun plutôt qu'une ligne vide.
+- Nouvelle commande `get-search [id]` pour relire une recherche et ses filtres ; `update-search` les rappelle à chaque point d'étape.
+
+Migration automatique de la base, avec sauvegarde préalable comme d'habitude. Les recherches déjà enregistrées gardent tout ce qu'elles avaient et se voient attribuer le seuil de 50 qui s'appliquait à elles.
+
 ### 2.13.0 - 2026-09-29
 
 LinkedIn remarche, et les deux vues du dashboard se trient.

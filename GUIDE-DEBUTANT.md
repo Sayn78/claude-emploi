@@ -8,7 +8,7 @@ Comptez trois quarts d'heure la première fois, dont la moitié en téléchargem
 
 ## À quoi ça sert, concrètement
 
-Vous déposez votre CV dans un dossier. Vous dites à Claude quel poste et quelle ville vous cherchez. Il ouvre un navigateur sous vos yeux, parcourt France Travail, HelloWork, Free-Work, Indeed et LinkedIn, lit les annonces une par une et garde celles qui correspondent vraiment à votre CV, avec une note sur 100 et une explication. Vous obtenez une liste triée, un tableau pour suivre vos candidatures, et des lettres de motivation rédigées à partir de votre seul CV.
+Vous déposez votre CV dans un dossier. Claude ouvre une page web sur votre ordinateur, et c'est depuis cette page que tout se passe : vous cliquez sur « Lancer une recherche », vous remplissez un formulaire avec le poste, la ville et ce que vous ne voulez pas voir. Claude ouvre alors un navigateur sous vos yeux, parcourt France Travail, HelloWork, Free-Work, Indeed et LinkedIn, lit les annonces une par une et garde celles qui correspondent vraiment à votre CV, avec une note sur 100 et une explication. Vous obtenez une liste triée, un tableau pour suivre vos candidatures, et des lettres de motivation rédigées à partir de votre seul CV.
 
 Rien ne part sur Internet à part les pages d'annonces que le navigateur consulte. Votre CV reste sur votre ordinateur.
 
@@ -92,11 +92,32 @@ Et si ça vous embête, **dites-le simplement** : « lance ma recherche d'emploi
 
 Claude prend la main. Il vérifie que tout est en place, crée ce dont il a besoin et ouvre une page dans votre navigateur, à l'adresse `localhost:3000`. C'est votre tableau de bord.
 
-Il vous demande alors de déposer votre CV en PDF dans le dossier `cv` qu'il vient de créer, avec un bouton qui vous ouvre ce dossier. Glissez-y votre CV, revenez dans le chat de la page, cliquez sur **C'est fait**.
+Il vous dit alors de déposer votre CV en PDF dans le dossier `cv` qu'il vient de créer, avec un bouton qui vous ouvre ce dossier. Glissez-y votre CV, puis cliquez sur **Rescanner le dossier cv/** en haut de la page. Claude lit le PDF et vous résume ce qu'il a compris de votre parcours.
 
-À partir de là, tout se passe dans la page : Claude pose ses questions, vous répondez en cliquant.
+Et là, il s'arrête. **C'est normal, et c'est voulu : il ne lancera rien tant que vous n'aurez pas cliqué.** Tout part des boutons de la page.
+
+## Étape 8 : votre première recherche
+
+En haut du tableau de bord, cliquez sur **Lancer une recherche**. Un formulaire s'ouvre.
+
+![Le formulaire de recherche](docs/captures/10-lancer-recherche.png)
+
+À gauche, ce que vous cherchez : le poste, la ville avec son code postal, le type de contrat, et deux nombres dont on reparle plus bas. Claude a déjà rempli le poste et la ville à partir de votre CV, corrigez si ça ne vous convient pas.
+
+À droite, ce que vous ne voulez **pas** voir. Les quatre cases sont facultatives, laissez-les vides pour votre première recherche :
+
+- **Mots-clés à éviter** : tapez un mot, appuyez sur Entrée, il devient une pastille. Toute annonce dont le titre contient ce mot sera ignorée. Pratique quand « senior » ou « expérimenté » revient sans arrêt alors que vous débutez.
+- **Salaire minimum** : un montant, et vous précisez s'il s'agit de brut ou de net, par an ou par mois. Les annonces qui n'affichent aucun salaire sont gardées quand même - c'est la majorité d'entre elles.
+- **Score minimum** : la note en dessous de laquelle une offre n'est pas retenue. 50 par défaut, laissez tel quel pour commencer.
+- **Distance maximale** : un rayon en kilomètres autour de votre ville. Les annonces sans adresse précise et celles en télétravail complet passent quand même.
+
+En bas, les sites à parcourir : cliquez les logos qui vous intéressent. France Travail et HelloWork sont déjà cochés, c'est un bon départ.
+
+Cliquez sur **Lancer**. Claude annonce dans le chat de la page ce qu'il fait, et vous regardez le navigateur travailler.
 
 ![Le chat du tableau de bord, avec une question de Claude et ses réponses en boutons](docs/captures/03-chat.png)
+
+Il ne vous parlera que quand il a quelque chose à dire : un bilan entre deux sites, une question pour savoir s'il continue ou s'il élargit, ou un captcha à résoudre vous-même. Vous répondez en cliquant.
 
 ---
 
@@ -135,11 +156,19 @@ Corrigez votre CV, redéposez-le, puis passez à la suite. Les mots-clés qui ma
 
 ### Ensuite, une recherche modeste
 
-Claude vous demande le poste, la ville, le **type de contrat** (CDI, alternance, CDD...), et deux nombres. Répondez franchement sur le contrat : il ne le devine pas et ne cherche pas à le déduire de votre CV.
+Dans le formulaire, laissez l'**objectif** sur 10 offres et le **plafond** sur 40 annonces. L'objectif, c'est ce que vous voulez garder ; le plafond, c'est le nombre d'annonces que Claude a le droit d'ouvrir avant d'abandonner. Sans ce garde-fou, un intitulé trop large le ferait tourner une heure.
 
-Pour la première recherche, demandez **10 offres pour 40 annonces lues au maximum**. Vous verrez tout de suite si vos mots-clés sont les bons. Une recherche trop large vous noie ; une recherche trop étroite ne ramène rien.
+Soyez franc sur le **type de contrat** : il ne le devine pas et ne cherche pas à le déduire de votre CV. Quelqu'un avec quinze ans de métier peut très bien chercher une alternance.
 
 Si les résultats sont à côté, changez l'intitulé plutôt que la ville. « Assistant administratif » et « Secrétaire administratif » ne ramènent pas les mêmes annonces.
+
+### Les filtres, au deuxième tour
+
+Laissez la colonne de droite vide la première fois. Une recherche sans filtre vous montre ce que le marché propose vraiment : les salaires affichés, les intitulés qui reviennent, le niveau demandé.
+
+C'est en lisant ces résultats que vous saurez quoi filtrer. Trop d'annonces « senior » alors que vous démarrez ? Mettez-le en mot à éviter. Des salaires systématiquement sous ce que vous visez ? Posez un minimum. Des postes à l'autre bout du département ? Mettez 30 km.
+
+Quatre filtres serrés dès le premier essai, sur un intitulé mal choisi, et vous ne ramenez rien sans comprendre pourquoi. À la fin de chaque recherche, Claude vous dit combien d'annonces chaque filtre a écartées : c'est ce chiffre qui vous dit lequel est trop sévère.
 
 ### Lisez les scores, pas seulement les titres
 
